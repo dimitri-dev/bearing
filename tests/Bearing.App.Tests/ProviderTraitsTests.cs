@@ -272,6 +272,20 @@ public class ProviderTraitsEditorFactsTests
         Assert.Empty(ProviderTraits.OpenSearch.NetworkOptions);
     }
 
+    /// <summary>R2-13: the options that decide how a pool signs in — the App's SamePool compares them, and the
+    /// credential kind, only for an engine that declares any; the other four engines declare none.</summary>
+    [Fact]
+    public void Only_the_search_engines_have_options_that_decide_how_the_pool_signs_in()
+    {
+        Assert.Equal([Bearing.Data.Search.SearchConnectionFactory.AuthenticationOption], ProviderTraits.Elasticsearch.PoolOptions);
+        Assert.Equal([Bearing.Data.Search.SearchConnectionFactory.RegionOption], ProviderTraits.OpenSearch.PoolOptions);
+        Assert.Empty(ProviderTraits.Postgres.PoolOptions);
+        Assert.Empty(ProviderTraits.SqlServer.PoolOptions);
+        Assert.Empty(ProviderTraits.MySql.PoolOptions);
+        Assert.Empty(ProviderTraits.DynamoDb.PoolOptions);
+        Assert.Empty(ProviderTraits.For("no-such-engine").PoolOptions);
+    }
+
     [Fact]
     public void An_unknown_engine_asks_no_scan_question()
         => Assert.False(ProviderTraits.For("no-such-engine").AsksFullScanQuestion);

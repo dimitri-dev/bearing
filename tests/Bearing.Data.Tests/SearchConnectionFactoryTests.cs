@@ -139,6 +139,68 @@ public class SearchConnectionFactoryTests
         Assert.Null(factory.BaseUri);
     }
 
+    /// <summary>
+    /// R2-4: Prefer falls back to plain HTTP <b>only</b> after a failed TLS handshake. Here the handshake succeeds
+    /// and the server reads the request, then hangs up — without a word, or after half a status line. A failure
+    /// after TLS was established is no reason to resend in clear, which would put the credentials on the wire: no
+    /// request ever arrives in plain text. Fails if the fallback's <c>HttpRequestError.SecureConnectionError</c>
+    /// filter is removed (checked: a plain-text request carrying the Basic header then arrives).
+    /// <para>
+    /// Measured: a hang-up with no answer byte is retried by <see cref="SocketsHttpHandler"/> itself, on a new TLS
+    /// connection, three times (four connections, every one TLS); a hang-up after an answer byte is not retried —
+    /// one connection.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Prefer_does_not_fall_back_when_tls_worked_and_the_server_hung_up_after_the_request(bool halfAnswered)
+    {
+        await using var server = LoopbackServer.Tls(_ => halfAnswered
+            ? new Canned(200, "") { Raw = Encoding.ASCII.GetBytes("HTTP/1.1 200 O") }
+            : null);
+        await using var factory = new SearchConnectionFactory(
+            SearchEngine.Elasticsearch, Info(server.Port, TlsMode.Prefer, user: "elastic"), "hunter22-secret");
+
+        var failure = await Assert.ThrowsAsync<SearchTransportException>(() => factory.TestConnectionAsync(CancellationToken.None));
+
+        Assert.NotNull(failure.Error);
+        Assert.NotEqual(HttpRequestError.SecureConnectionError, failure.Error);
+        Assert.DoesNotContain(server.Requests, r => !r.OverTls);
+        Assert.Equal(server.Connections, server.Requests.Count);
+        Assert.Equal(halfAnswered ? 1 : 4, server.Connections);
+        Assert.Null(factory.BaseUri);
+    }
+
+    /// <summary>
+    /// R2-3, the mechanism: a TLS handshake that never completes runs into the handler's connect timeout, which
+    /// <see cref="SocketsHttpHandler"/> reports as a cancel nobody asked for. The transport exception keeps that
+    /// cancel as its inner exception — and is terminal for <see cref="SearchErrors"/>, so the connect sentence is
+    /// what is shown and the failure is not classified as a cancel.
+    /// </summary>
+    [Fact]
+    public async Task A_connect_timeout_is_the_connect_sentence_not_a_cancel()
+    {
+        await using var server = LoopbackServer.Silent();
+        await using var factory = new SearchConnectionFactory(SearchEngine.Elasticsearch, Info(server.Port, TlsMode.Require), null)
+        {
+            ConnectWithin = TimeSpan.FromSeconds(1),
+        };
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var failure = await Assert.ThrowsAsync<SearchTransportException>(() => factory.TestConnectionAsync(guard.Token));
+
+        Assert.False(guard.IsCancellationRequested);
+        Assert.StartsWith("No connection could be made within 1 s.", failure.Message);
+        Assert.IsAssignableFrom<OperationCanceledException>(failure.InnerException);
+        Assert.Equal(DbErrorKind.Unknown, SearchErrors.Classify(failure));
+        var error = SearchErrors.ToQueryError(failure, SearchEngine.Elasticsearch, 30);
+        Assert.Equal(failure.Message, error.Message);
+        Assert.NotEqual(SearchErrors.CanceledCode, error.SqlState);
+        Assert.Equal(1, server.Connections);
+        Assert.Empty(server.Requests);
+    }
+
 #pragma warning disable format
     [Theory]
     [InlineData(TlsMode.Require,    SslPolicyErrors.RemoteCertificateChainErrors,  true)]
@@ -201,6 +263,29 @@ public class SearchConnectionFactoryTests
         await factory.TestConnectionAsync(CancellationToken.None);
 
         Assert.Null(Assert.Single(server.Requests).Header("Authorization"));
+    }
+
+    /// <summary>R2-1: with nothing to send there is no sign-in at all, so a 401 says the connection has no user or
+    /// password — it does not blame credentials that were never sent.</summary>
+    [Theory]
+    [InlineData(nameof(SearchEngine.Elasticsearch))]
+    [InlineData(nameof(SearchEngine.OpenSearch))]
+    public async Task A_401_with_no_credentials_sent_says_the_connection_has_none(string engineName)
+    {
+        var engine = Enum.Parse<SearchEngine>(engineName);
+        await using var server = LoopbackServer.Plain(_ => new Canned(401,
+            """{"error":{"type":"security_exception","reason":"missing authentication credentials"},"status":401}"""));
+        await using var factory = new SearchConnectionFactory(engine, Info(server.Port, TlsMode.Disable, user: " "), null);
+
+        var refused = await Assert.ThrowsAsync<SearchSignInException>(() => factory.TestConnectionAsync(CancellationToken.None));
+
+        Assert.Equal(SearchAuthMethod.None, factory.AuthMethod);
+        Assert.Equal(SearchAuthMethod.None, refused.Method);
+        Assert.Equal(SearchErrors.SignInSentence(engine, SearchAuthMethod.None, null), refused.Message);
+        Assert.Contains("this connection has no user or password", refused.Message);
+        Assert.DoesNotContain("refused the user name and password", refused.Message);
+        Assert.Null(Assert.Single(server.Requests).Header("Authorization"));
+        Assert.Equal(DbErrorKind.Authentication, SearchErrors.Classify(refused));
     }
 
     [Fact]
@@ -766,10 +851,13 @@ public class SearchConnectionFactoryTests
         }
     }
 
+    /// <summary>R2-2: only 0 means the default port; 1 and 65535 are kept, as the <c>Host</c> header the server
+    /// received shows.</summary>
     [Theory]
-    [InlineData(0)]
-    [InlineData(70000)]
-    public async Task A_port_outside_the_range_is_the_default(int port)
+    [InlineData(0, SearchConnectionFactory.DefaultPort)]
+    [InlineData(1, 1)]
+    [InlineData(65535, 65535)]
+    public async Task Port_zero_is_the_default_and_the_range_edges_are_kept(int port, int sent)
     {
         await using var server = LoopbackServer.Plain(_ => new Canned(200, Ok));
         await using var factory = new SearchConnectionFactory(
@@ -780,7 +868,28 @@ public class SearchConnectionFactoryTests
 
         await factory.TestConnectionAsync(CancellationToken.None);
 
-        Assert.Equal($"search.invalid:{SearchConnectionFactory.DefaultPort}", Assert.Single(server.Requests).Header("Host"));
+        Assert.Equal($"search.invalid:{sent}", Assert.Single(server.Requests).Header("Host"));
+    }
+
+    /// <summary>R2-2: any other port outside 1–65535 fails the connect with its sentence; nothing is sent.</summary>
+    [Theory]
+    [InlineData(65536)]
+    [InlineData(70000)]
+    [InlineData(-1)]
+    public async Task A_port_outside_the_range_is_refused_not_replaced(int port)
+    {
+        await using var server = LoopbackServer.Plain(_ => new Canned(200, Ok));
+        await using var factory = new SearchConnectionFactory(
+            SearchEngine.Elasticsearch,
+            Info(port, TlsMode.Disable, host: "search.invalid"),
+            null,
+            new TunnelEndpoint("127.0.0.1", server.Port));
+
+        var refused = await Assert.ThrowsAsync<SearchConfigurationException>(() => factory.TestConnectionAsync(CancellationToken.None));
+
+        Assert.Equal(SearchErrors.PortOutOfRangeSentence, refused.Message);
+        Assert.Contains("1 to 65535", refused.Message);
+        Assert.Equal(0, server.Connections);
     }
 
     // ---- The connection test -----------------------------------------------------------------------------
@@ -801,14 +910,36 @@ public class SearchConnectionFactoryTests
         Assert.DoesNotContain("wrong-password", refused.Message);
     }
 
-    [Fact]
-    public async Task A_root_that_is_not_served_is_judged_by_the_index_list()
+    [Theory]
+    [InlineData(404)]
+    [InlineData(405)]
+    public async Task A_root_that_is_not_served_is_judged_by_the_index_list(int rootStatus)
     {
-        await using var server = LoopbackServer.Plain(r => r.Target == "/" ? new Canned(404, "") : new Canned(200, "[]"));
+        await using var server = LoopbackServer.Plain(r => r.Target == "/" ? new Canned(rootStatus, "") : new Canned(200, "[]"));
         await using var factory = new SearchConnectionFactory(SearchEngine.OpenSearch, Info(server.Port, TlsMode.Disable), null);
 
         Assert.True(await factory.TestConnectionAsync(CancellationToken.None));
 
+        Assert.Equal(["/", "/_cat/indices?format=json&h=index"], server.Requests.Select(r => r.Target));
+    }
+
+    /// <summary>R2-6: the fallback's failure side — the index list refused is the test's failure, with the
+    /// server's own reason and status, not a success and not the root's 404/405.</summary>
+    [Theory]
+    [InlineData(404)]
+    [InlineData(405)]
+    public async Task A_root_that_is_not_served_and_a_refused_index_list_is_the_index_lists_failure(int rootStatus)
+    {
+        await using var server = LoopbackServer.Plain(r => r.Target == "/"
+            ? new Canned(rootStatus, "")
+            : new Canned(403, """{"error":{"type":"security_exception","reason":"no permissions for [indices:monitor/settings/get]"},"status":403}"""));
+        await using var factory = new SearchConnectionFactory(SearchEngine.OpenSearch, Info(server.Port, TlsMode.Disable), null);
+
+        var failure = await Assert.ThrowsAsync<SearchServerException>(() => factory.TestConnectionAsync(CancellationToken.None));
+
+        Assert.Equal(403, failure.StatusCode);
+        Assert.Equal("no permissions for [indices:monitor/settings/get]", failure.Message);
+        Assert.Equal("security_exception", failure.Error.SqlState);
         Assert.Equal(["/", "/_cat/indices?format=json&h=index"], server.Requests.Select(r => r.Target));
     }
 
@@ -861,6 +992,59 @@ public class SearchConnectionFactoryTests
         Assert.Equal(1000, refused.LimitBytes);
     }
 
+    /// <summary>R2-5: no declared length (chunked) — the streaming guard refuses once the body passes the limit.</summary>
+    [Fact]
+    public async Task A_chunked_answer_over_the_ceiling_is_refused()
+    {
+        await using var server = LoopbackServer.Plain(_ => new Canned(200, "") { Raw = Chunked(new string('x', 2000), 500) });
+        await using var factory = new SearchConnectionFactory(SearchEngine.Elasticsearch, Info(server.Port, TlsMode.Disable), null);
+
+        var refused = await Assert.ThrowsAsync<SearchResponseTooLargeException>(
+            () => factory.SendAsync(HttpMethod.Get, "/_mapping", null, 1000, CancellationToken.None));
+
+        Assert.Equal(1000, refused.LimitBytes);
+    }
+
+    /// <summary>R2-5: a gzip body whose declared (compressed) length is far under the limit but which inflates past
+    /// it — the ceiling holds the decompressed bytes.</summary>
+    [Fact]
+    public async Task A_gzip_answer_that_inflates_past_the_ceiling_is_refused()
+    {
+        var compressed = Gzip(new string(' ', 5000));
+        Assert.True(compressed.Length < 1000);
+        await using var server = LoopbackServer.Plain(_ => new Canned(200, "") { Raw = Response(compressed, ("Content-Encoding", "gzip")) });
+        await using var factory = new SearchConnectionFactory(SearchEngine.Elasticsearch, Info(server.Port, TlsMode.Disable), null);
+
+        var refused = await Assert.ThrowsAsync<SearchResponseTooLargeException>(
+            () => factory.SendAsync(HttpMethod.Get, "/_mapping", null, 1000, CancellationToken.None));
+
+        Assert.Equal(1000, refused.LimitBytes);
+    }
+
+    /// <summary>R2-5: a body of exactly the limit is accepted — declared, chunked and inflated alike.</summary>
+    [Theory]
+    [InlineData("declared")]
+    [InlineData("chunked")]
+    [InlineData("gzip")]
+    public async Task An_answer_of_exactly_the_ceiling_is_accepted(string shape)
+    {
+        var body = "[" + new string(' ', 998) + "]";
+        var raw = shape switch
+        {
+            "chunked" => Chunked(body, 300),
+            "gzip" => Response(Gzip(body), ("Content-Encoding", "gzip")),
+            _ => Response(Encoding.UTF8.GetBytes(body)),
+        };
+        await using var server = LoopbackServer.Plain(_ => new Canned(200, "") { Raw = raw });
+        await using var factory = new SearchConnectionFactory(SearchEngine.Elasticsearch, Info(server.Port, TlsMode.Disable), null);
+
+        var response = await factory.SendAsync(HttpMethod.Get, "/_mapping", null, 1000, CancellationToken.None);
+
+        Assert.Equal(200, response.StatusCode);
+        Assert.Equal(1000, response.Body.Length);
+        Assert.Equal(body, response.BodyText);
+    }
+
     [Fact]
     public async Task A_handed_in_api_still_gets_the_redirect_and_sign_in_rules()
     {
@@ -870,11 +1054,18 @@ public class SearchConnectionFactoryTests
         await Assert.ThrowsAsync<SearchSignInException>(
             () => factory.SendAsync(HttpMethod.Post, "/_plugins/_sql", [], 1024, CancellationToken.None));
 
+        api.Next = new SearchResponse(302, [], []);
+        var redirect = await Assert.ThrowsAsync<SearchServerException>(
+            () => factory.SendAsync(HttpMethod.Post, "/_plugins/_sql", [], 1024, CancellationToken.None));
+        Assert.Equal(302, redirect.StatusCode);
+        Assert.Equal(SearchErrors.RedirectSentence(302), redirect.Message);
+        Assert.Equal(SearchErrors.RedirectCode, redirect.Error.SqlState);
+
         api.Next = new SearchResponse(500, Encoding.UTF8.GetBytes("{}"), []);
         var answer = await factory.SendAsync(HttpMethod.Post, "/_plugins/_sql", [], 1024, CancellationToken.None);
 
         Assert.Equal(500, answer.StatusCode);
-        Assert.Equal(2, api.Calls);
+        Assert.Equal(3, api.Calls);
     }
 
     // ---- Helpers -----------------------------------------------------------------------------------------
@@ -887,6 +1078,46 @@ public class SearchConnectionFactoryTests
         listener.Stop();
 
         return port;
+    }
+
+    /// <summary>A whole HTTP/1.1 answer with a declared length, as raw bytes.</summary>
+    private static byte[] Response(byte[] body, params (string Name, string Value)[] headers)
+    {
+        var head = new StringBuilder()
+            .Append("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n")
+            .Append($"Content-Length: {body.Length}\r\nConnection: close\r\n");
+        foreach (var (name, value) in headers)
+        {
+            head.Append($"{name}: {value}\r\n");
+        }
+        head.Append("\r\n");
+
+        return [.. Encoding.ASCII.GetBytes(head.ToString()), .. body];
+    }
+
+    /// <summary>A whole HTTP/1.1 answer with no declared length: the body in chunks of <paramref name="size"/>.</summary>
+    private static byte[] Chunked(string body, int size)
+    {
+        var text = new StringBuilder("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n");
+        for (var i = 0; i < body.Length; i += size)
+        {
+            var part = body.Substring(i, Math.Min(size, body.Length - i));
+            text.Append($"{Encoding.UTF8.GetByteCount(part):x}\r\n{part}\r\n");
+        }
+        text.Append("0\r\n\r\n");
+
+        return Encoding.UTF8.GetBytes(text.ToString());
+    }
+
+    private static byte[] Gzip(string text)
+    {
+        using var output = new MemoryStream();
+        using (var gzip = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Optimal))
+        {
+            gzip.Write(Encoding.UTF8.GetBytes(text));
+        }
+
+        return output.ToArray();
     }
 
     private static string WriteProfiles(string text)
@@ -976,7 +1207,12 @@ public class SearchConnectionFactoryTests
         }
     }
 
-    private sealed record Canned(int Status, string Body, params (string Name, string Value)[] Headers);
+    /// <summary>What the server answers. <see cref="Raw"/>, when set, is written as it is instead (a chunked or
+    /// compressed answer the test built byte by byte).</summary>
+    private sealed record Canned(int Status, string Body, params (string Name, string Value)[] Headers)
+    {
+        public byte[]? Raw { get; init; }
+    }
 
     private sealed record Recorded(string Line, string Target, IReadOnlyList<(string Name, string Value)> Headers, byte[] Body, string Raw, bool OverTls)
     {
@@ -989,7 +1225,9 @@ public class SearchConnectionFactoryTests
     /// <summary>
     /// A one-request-per-connection HTTP/1.1 server on 127.0.0.1. Plain, it answers a TLS ClientHello the way a
     /// plain HTTP server does (a 400 in clear text, then close) and counts it; with a certificate it speaks TLS
-    /// only and records the SNI it was asked for.
+    /// and records the SNI it was asked for — and a connection that opens in clear text instead is read and
+    /// recorded as a plain request (<c>OverTls</c> false), never answered. A responder that returns null hangs up
+    /// after reading the request, without answering. <see cref="Silent"/> accepts and never says a word.
     /// </summary>
     private sealed class LoopbackServer : IAsyncDisposable
     {
@@ -997,25 +1235,31 @@ public class SearchConnectionFactoryTests
 
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly CancellationTokenSource _stop = new();
-        private readonly Func<Recorded, Canned> _respond;
+        private readonly Func<Recorded, Canned?> _respond;
         private readonly X509Certificate2? _certificate;
+        private readonly bool _silent;
         private readonly ConcurrentQueue<Recorded> _requests = new();
         private readonly Task _loop;
         private int _tlsHellos;
         private int _connections;
 
-        private LoopbackServer(Func<Recorded, Canned> respond, X509Certificate2? certificate)
+        private LoopbackServer(Func<Recorded, Canned?> respond, X509Certificate2? certificate, bool silent = false)
         {
             _respond = respond;
             _certificate = certificate;
+            _silent = silent;
             _listener.Start();
             Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
             _loop = AcceptAsync();
         }
 
-        public static LoopbackServer Plain(Func<Recorded, Canned> respond) => new(respond, null);
+        public static LoopbackServer Plain(Func<Recorded, Canned?> respond) => new(respond, null);
 
-        public static LoopbackServer Tls(Func<Recorded, Canned> respond) => new(respond, Certificate.Value);
+        public static LoopbackServer Tls(Func<Recorded, Canned?> respond) => new(respond, Certificate.Value);
+
+        /// <summary>Accepts the TCP connection and then neither reads nor writes until disposed: a TLS handshake
+        /// against it never completes.</summary>
+        public static LoopbackServer Silent() => new(_ => null, null, silent: true);
 
         public int Port { get; }
 
@@ -1067,11 +1311,29 @@ public class SearchConnectionFactoryTests
             timeout.CancelAfter(TimeSpan.FromSeconds(10));
             try
             {
+                if (_silent)
+                {
+                    await Task.Delay(Timeout.Infinite, _stop.Token);
+                    return;
+                }
+
                 Stream stream = client.GetStream();
                 var overTls = false;
                 byte[] prefix = [];
                 if (_certificate is not null)
                 {
+                    var peek = new byte[1];
+                    if (await client.Client.ReceiveAsync(peek, SocketFlags.Peek, timeout.Token) == 0)
+                    {
+                        return;
+                    }
+                    if (peek[0] != 0x16)
+                    {
+                        // Clear text to a TLS server: what a fallback would send. Recorded, never answered.
+                        _requests.Enqueue(await ReadRequestAsync(stream, [], overTls: false, timeout.Token));
+                        return;
+                    }
+
                     var ssl = new SslStream(stream);
                     await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
                     {
@@ -1105,7 +1367,17 @@ public class SearchConnectionFactoryTests
 
                 var request = await ReadRequestAsync(stream, prefix, overTls, timeout.Token);
                 _requests.Enqueue(request);
-                var canned = _respond(request);
+                if (_respond(request) is not { } canned)
+                {
+                    // Hang up without a word: the request was read, no answer follows.
+                    return;
+                }
+                if (canned.Raw is { } raw)
+                {
+                    await stream.WriteAsync(raw, timeout.Token);
+                    await stream.FlushAsync(timeout.Token);
+                    return;
+                }
                 var body = Encoding.UTF8.GetBytes(canned.Body);
                 var head = new StringBuilder()
                     .Append($"HTTP/1.1 {canned.Status} Canned\r\n")

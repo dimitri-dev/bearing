@@ -82,7 +82,8 @@ Providers `elasticsearch` and `opensearch`, **query-only**, over one implementat
 with its dialect by id (`ProviderTraits`), and the two differ in quoting, endpoints, statement lists and sign-in.
 Measured against Elasticsearch 9.5.6 and OpenSearch 3.10.0 containers (`SearchLiveTests`). Security: §1.9d.
 - **One door:** every request (executor, reader, Test) goes through `SearchConnectionFactory.SendAsync` — scheme,
-  `Prefer`, redirects, 401 and signing live there; never hold the `HttpClient` around it. Answers cap at 64 MB.
+  `Prefer`, redirects, 401 and signing live there; never hold the `HttpClient` around it. Answers cap at 64 MB
+  (declared, chunked and decompressed bytes alike). Port 0 = 9200; any other port outside 1–65535 is refused.
 - **Four endpoints:** Elasticsearch SQL `/_sql`, ES|QL `/_query`, OpenSearch SQL `/_plugins/_sql`, PPL
   `/_plugins/_ppl`. One statement per request, no trailing `;` (Elasticsearch answers 400 to one); a batch stops
   at its first failure; a bare `;` sends nothing but keeps its `StatementIndex`.
@@ -96,11 +97,14 @@ Measured against Elasticsearch 9.5.6 and OpenSearch 3.10.0 containers (`SearchLi
   shape. OpenSearch's cursor lifetime is a cluster setting (`plugins.sql.cursor.keep_alive`), and `fetch_size` is
   sent **only for a plain select** (`SearchBatch.IsPlainSelect`) — with it, other shapes go to the legacy engine,
   which mislabels types — so any other shape arrives whole, capped by `plugins.query.size_limit`, with no cursor
-  and no Bearing notice. ES|QL, PPL and cursor-less answers are returned **whole**, `Truncated` false: `MaxRows`
+  and no Bearing notice. **The cut gives no signal (measured, `Measured_15…`):** with the limit at 5 over 30
+  documents, SQL `LIMIT`/`DISTINCT`/`GROUP BY` and PPL `fields`/`stats` answer 5 rows with `total` = `size` = 5, no
+  cursor and no warning — so nothing is said; never guess from a row count. ES|QL, PPL and cursor-less answers are returned **whole**, `Truncated` false: `MaxRows`
   is not applied (cutting would hide rows nothing can fetch again); a host that must cap trims and says so
   (`BearingHost.Capped`). Count is never offered.
 - **`QueryResult.Notice`, not `Message`:** the server's warnings (headers and body, each cut at 500 chars) go to
-  `Notice`, which the App's status line appends. `Message` stays null on every result with columns — on a
+  `Notice`; the App's status line appends every distinct notice of the run, in result order (a continuation
+  page's is not shown; the `bearing` command repeats none). `Message` stays null on every result with columns — on a
   continuing result both hosts read it as the request-budget note. An ES|QL answer with `is_partial: true` leads
   its `Notice` with `PartialAnswerSentence`; SQL and PPL answers are not read for `is_partial`. An error leads
   with its language (`ES|QL: …`), its `line:col` is the position, and the server's root cause is appended when it

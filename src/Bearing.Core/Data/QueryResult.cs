@@ -84,7 +84,13 @@ public sealed record QueryResult(
 
     /// <summary>
     /// What the server said about a result that <b>has rows</b> — a warning such as a default row limit it
-    /// applied. Null when it said nothing (and, for now, whenever no provider sets it).
+    /// applied, or that it marked the answer partial. Null when it said nothing. Set by the Elasticsearch and
+    /// OpenSearch executors only; every other engine leaves it null.
+    /// <para>
+    /// <b>Who reads it:</b> the App's status line for a run, which says every distinct notice of the run's results
+    /// in result order (<c>ResultSetBuilder.DescribeResults</c>). A continuation page's notice is not shown, and
+    /// the <c>bearing</c> command does not repeat notices in its output.
+    /// </para>
     /// <para>
     /// A member of its own because <see cref="Message"/> cannot carry it: <c>Message</c> is shown only for a
     /// result without columns, and on a result with a <see cref="Continuation"/> both hosts read it as the

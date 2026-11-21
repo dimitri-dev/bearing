@@ -86,6 +86,16 @@ public sealed record ProviderTraits(
     public IReadOnlyList<string> NetworkOptions { get; init; } = [];
 
     /// <summary>
+    /// Keys of <see cref="ConnectionInfo.Options"/> that decide <em>how a pool signs in</em> — fixed when its
+    /// factory is built, so a saved change to one must drop the live pool, or lease-based reads (Load more, Fetch
+    /// all) would go on signing in the old way. Compared trimmed, blank as absent, the way
+    /// <see cref="NetworkOptions"/> is. An engine that declares any also has its <see cref="ConnectionInfo.CredentialKind"/>
+    /// compared (the App's <c>SamePool</c>); the tree and the schema are kept (not a network identity). Empty
+    /// for an engine whose sign-in the options bag does not decide.
+    /// </summary>
+    public IReadOnlyList<string> PoolOptions { get; init; } = [];
+
+    /// <summary>
     /// The sentence the connection editor shows under the credential picker when the AWS profile kind is chosen —
     /// what happens to the profile and to the credentials it resolves to — or null where the engine has no AWS
     /// profile sign-in (<see cref="IDbProvider.SupportsAwsProfile"/> false). Per engine because the two engines
@@ -216,6 +226,8 @@ public sealed record ProviderTraits(
         ReadsContinueByToken = true,
         SamplesAttributes = false,
         NetworkOptions = [],
+        // User and password or API key: which Authorization header every request of the pool carries.
+        PoolOptions = [SearchConnectionFactory.AuthenticationOption],
         AwsProfileNote = null,
     };
 
@@ -248,6 +260,8 @@ public sealed record ProviderTraits(
         ReadsContinueByToken = true,
         SamplesAttributes = false,
         NetworkOptions = [],
+        // The region an AWS-profile pool signs every request for.
+        PoolOptions = [SearchConnectionFactory.RegionOption],
         // The SDK's credentials object lives as long as the connection's factory (a static-key profile's keys
         // with it), so the note says the SDK keeps what it resolved — not that nothing is stored (§1.1, §1.9d).
         AwsProfileNote = "Signs each request with the AWS profile named in User (the AWS SDK's default credential "

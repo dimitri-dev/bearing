@@ -420,9 +420,11 @@ public static class SearchScan
     /// <summary>
     /// The first index name in <paramref name="statement"/> that begins with <c>.</c>, or null: a bare name
     /// (<c>.kibana</c>, <c>.*</c>), a quoted or backticked name whose text — or one of its comma-separated,
-    /// <c>cluster:</c>-qualified parts — starts with a dot, and in a piped statement's source segment a string
-    /// naming its source that does. A dot that ends a path (<c>a.b</c>, <c>t.*</c>, <c>"a"."b"</c>) is not one,
-    /// nor is a string anywhere else (<c>where msg = '.x'</c>). Accident prevention, not a boundary.
+    /// <c>cluster:</c>-qualified parts — starts with a dot, and in a piped statement a string that does in an index
+    /// position: naming its source in the source segment, or the index operand of a <c>LOOKUP JOIN</c> /
+    /// <c>lookup</c> / <c>join</c> after a pipe (<see cref="NamesAJoinedIndex"/>). A dot that ends a path
+    /// (<c>a.b</c>, <c>t.*</c>, <c>"a"."b"</c>) is not one, nor is a string anywhere else
+    /// (<c>where msg = '.x'</c>, an <c>ENRICH</c> policy). Accident prevention, not a boundary.
     /// </summary>
     internal static string? DotIndexName(SearchEngine engine, SearchStatement statement)
     {
@@ -469,8 +471,8 @@ public static class SearchScan
                 return quoted;
             }
 
-            if (token.Kind == SearchTokenKind.String && i < sourceSegmentEnd
-                && statement.Language == SearchLanguage.Piped && NamesTheSource(engine, statement, code, i)
+            if (token.Kind == SearchTokenKind.String && statement.Language == SearchLanguage.Piped
+                && ((i < sourceSegmentEnd && NamesTheSource(engine, statement, code, i)) || NamesAJoinedIndex(code, i))
                 && DottedPart(Unquoted(token)) is { } named)
             {
                 return named;
@@ -478,6 +480,56 @@ public static class SearchScan
         }
 
         return null;
+    }
+
+    /// <summary>The words whose next operand is an index another command reads: ES|QL <c>LOOKUP JOIN</c>, PPL
+    /// <c>lookup</c> and <c>join</c>.</summary>
+    private static readonly HashSet<string> JoinWords = new(StringComparer.OrdinalIgnoreCase) { "JOIN", "LOOKUP" };
+
+    /// <summary>
+    /// Whether the string at <paramref name="index"/> of a piped statement's code tokens is the index operand of a
+    /// command that reads another index: it directly follows a <c>JOIN</c> or <c>LOOKUP</c> word (ES|QL
+    /// <c>| LOOKUP JOIN ".x" ON k</c>, PPL <c>| lookup '.x' k</c>), or it ends a depth-0 pipe segment whose first
+    /// or second word is <c>JOIN</c> (PPL writes a join's right-hand index last: <c>| left join on a = b '.x'</c>).
+    /// Widening only: a string anywhere else (<c>WHERE</c>, <c>EVAL</c>, an <c>ENRICH</c> policy) is not checked.
+    /// </summary>
+    private static bool NamesAJoinedIndex(List<SearchToken> code, int index)
+    {
+        if (index > 0 && code[index - 1].Kind == SearchTokenKind.Word && JoinWords.Contains(code[index - 1].Text))
+        {
+            return true;
+        }
+
+        // The depth-0 segment holding the token: from just after the nearest depth-0 '|' before it to the next one.
+        var depth = 0;
+        var segmentStart = -1;
+        var segmentEnd = code.Count;
+        for (var i = 0; i < code.Count; i++)
+        {
+            if (code[i].Text == "(") depth++;
+            else if (code[i].Text == ")") depth = Math.Max(0, depth - 1);
+            else if (code[i].Text == "|" && depth == 0)
+            {
+                if (i < index)
+                {
+                    segmentStart = i + 1;
+                }
+                else
+                {
+                    segmentEnd = i;
+                    break;
+                }
+            }
+        }
+
+        if (segmentStart < 0 || index != segmentEnd - 1)
+        {
+            return false;
+        }
+
+        var words = code.Skip(segmentStart).Take(2).ToList();
+
+        return words.Any(w => w.Kind == SearchTokenKind.Word && string.Equals(w.Text, "JOIN", StringComparison.OrdinalIgnoreCase));
     }
 
     // ---- The scan ----

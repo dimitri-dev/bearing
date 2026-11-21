@@ -24,7 +24,8 @@ namespace Bearing.Data.Search;
 /// <b>Sign-in is decided by the settings, never by whether a secret is present</b> (the dialog's Test hands over
 /// the password box whatever the kind): <see cref="CredentialKind.StoredPassword"/> / <see cref="CredentialKind.Prompt"/>
 /// with <c>Options["Authentication"]</c> absent or <see cref="AuthenticationPassword"/> is HTTP Basic — and no
-/// <c>Authorization</c> header at all when both the user and the secret are blank; with
+/// <c>Authorization</c> header at all when both the user and the secret are blank
+/// (<see cref="SearchAuthMethod.None"/>, so a 401 then says the connection has no user or password); with
 /// <see cref="AuthenticationApiKey"/> (Elasticsearch only; ignored on OpenSearch) it is
 /// <c>Authorization: ApiKey &lt;secret&gt;</c> with no user sent. <see cref="CredentialKind.AwsProfile"/> is
 /// never Basic or ApiKey, whatever secret was passed; plain HTTP to a host that is not this machine is refused
@@ -54,7 +55,8 @@ namespace Bearing.Data.Search;
 /// <para>
 /// <b>A setting that cannot be honoured fails the connect, not the constructor.</b> The constructor never throws
 /// for one; the sentence is thrown by <see cref="TestConnectionAsync"/> and every <see cref="SendAsync"/>, and
-/// nothing is sent from a refused setting.
+/// nothing is sent from a refused setting. A port of 0 is the default (<see cref="DefaultPort"/>); any other
+/// port outside 1–65535 is refused (<see cref="SearchErrors.PortOutOfRangeSentence"/>), never replaced.
 /// </para>
 /// </summary>
 public sealed class SearchConnectionFactory : IDbConnectionFactory
@@ -72,7 +74,8 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
     /// <summary>The key in <see cref="ConnectionInfo.Options"/> the editor's AWS region field fills (OpenSearch).</summary>
     public const string RegionOption = "Region";
 
-    /// <summary>The port both servers listen on out of the box — used when the connection's port is not 1–65535.</summary>
+    /// <summary>The port both servers listen on out of the box — used when the connection's port is 0. Any other
+    /// port outside 1–65535 is refused, not replaced.</summary>
     public const int DefaultPort = 9200;
 
     /// <summary>The ceiling for one answer when the caller has no reason to pick another (the schema reads).</summary>
@@ -84,6 +87,10 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
     /// <summary>How long establishing a connection (TCP and TLS) may take. The statement timeout is the
     /// executor's: <see cref="HttpClient.Timeout"/> is infinite.</summary>
     internal static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>This factory's connect timeout: <see cref="ConnectTimeout"/>, shortened only by the transport's
+    /// tests (a handshake that never completes, without waiting 15 s).</summary>
+    internal TimeSpan ConnectWithin { get; init; } = ConnectTimeout;
 
     private readonly SearchSettings? _settings;
     private readonly Exception? _failure;
@@ -273,10 +280,22 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
         SearchEngine engine, ConnectionInfo info, string? secret, IAwsCredentialSource? awsCredentials, TimeProvider clock)
     {
         var host = HostOf(info.Host);
-        var port = info.Port is >= 1 and <= 65535 ? info.Port : DefaultPort;
+        var port = info.Port switch
+        {
+            0 => DefaultPort,
+            >= 1 and <= 65535 => info.Port,
+            _ => throw new SearchConfigurationException(SearchErrors.PortOutOfRangeSentence),
+        };
         var mode = TlsPolicy.Resolve(info);
         var loopback = TlsPolicy.IsLoopback(info.Host);
         var method = MethodOf(engine, info);
+
+        // Basic with nothing to send is no sign-in at all — settled as None, so a 401 says the connection has no
+        // user or password instead of blaming credentials that were never sent.
+        if (method == SearchAuthMethod.Basic && string.IsNullOrEmpty(info.User?.Trim()) && string.IsNullOrEmpty(secret))
+        {
+            method = SearchAuthMethod.None;
+        }
 
         if (method == SearchAuthMethod.AwsSigV4 && mode == TlsMode.Disable && !loopback)
         {
@@ -432,18 +451,16 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
         throw new SearchConfigurationException(SearchErrors.UnknownAuthenticationSentence(choice));
     }
 
-    /// <summary>The request authentication for <paramref name="method"/>. Basic with a blank user and a blank
-    /// secret is no header at all (a cluster with security off); the API key is trimmed (no encoded key holds
-    /// whitespace, a pasted one often ends in a line break) and refused blank or holding a control character.</summary>
+    /// <summary>The request authentication for <paramref name="method"/>. <see cref="SearchAuthMethod.None"/> (a
+    /// blank user and a blank secret: a cluster with security off) is no header at all; the API key is trimmed (no
+    /// encoded key holds whitespace, a pasted one often ends in a line break) and refused blank or holding a
+    /// control character.</summary>
     private static ISearchRequestAuth AuthOf(SearchAuthMethod method, ConnectionInfo info, string? secret)
     {
         switch (method)
         {
             case SearchAuthMethod.Basic:
-                var user = info.User ?? "";
-                return string.IsNullOrEmpty(user.Trim()) && string.IsNullOrEmpty(secret)
-                    ? NoSearchAuth.Instance
-                    : new BasicSearchAuth(user.Trim(), secret ?? "");
+                return new BasicSearchAuth((info.User ?? "").Trim(), secret ?? "");
             case SearchAuthMethod.ApiKey:
                 var key = secret?.Trim();
                 if (string.IsNullOrEmpty(key))
@@ -517,8 +534,11 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
 
     /// <summary>One call through <paramref name="api"/>, with a transport failure turned into a scrubbed
     /// <see cref="SearchTransportException"/>. A cancel through <paramref name="ct"/> passes as it came; a
-    /// cancel nobody asked for is the handler's connect timeout.</summary>
-    private static async Task<SearchResponse> TransportAsync(
+    /// cancel nobody asked for is the handler's connect timeout — measured: <see cref="SocketsHttpHandler"/>
+    /// reports an elapsed <see cref="SocketsHttpHandler.ConnectTimeout"/> as a <see cref="TaskCanceledException"/>
+    /// (inner <see cref="TimeoutException"/>), which the transport exception keeps as its inner exception and
+    /// which <see cref="SearchErrors"/> does not read as a cancel (the transport exception is terminal there).</summary>
+    private async Task<SearchResponse> TransportAsync(
         ISearchApi api, HttpMethod method, string pathAndQuery, byte[]? jsonBody, long maxResponseBytes, CancellationToken ct)
     {
         try
@@ -531,7 +551,7 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
         }
         catch (OperationCanceledException e)
         {
-            throw Transport(e, null, $"No connection could be made within {ConnectTimeout.TotalSeconds:0} s.");
+            throw Transport(e, null, $"No connection could be made within {ConnectWithin.TotalSeconds:0} s.");
         }
         catch (HttpRequestException e)
         {
@@ -585,7 +605,7 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
         var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
-            ConnectTimeout = ConnectTimeout,
+            ConnectTimeout = ConnectWithin,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
             SslOptions = new SslClientAuthenticationOptions
             {

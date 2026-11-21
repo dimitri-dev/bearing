@@ -190,6 +190,11 @@ public class ElasticsearchDialectTests
     [InlineData("FROM logs | KEEP completion, rerank")]
     [InlineData("FROM logs | EVAL x = 0.5")]
     [InlineData("ROW a = \".x\"")]
+    // A string starting with a dot that is not an index operand (R2-11's near-misses).
+    [InlineData("FROM logs | WHERE msg == \".kibana\" | LIMIT 5")]
+    [InlineData("FROM logs | EVAL x = \".kibana\"")]
+    [InlineData("FROM logs | ENRICH \".policy\" ON id")]
+    [InlineData("FROM logs | LOOKUP JOIN lookup_idx ON id | WHERE k == \".x\"")]
     public void A_read_on_the_allow_list_runs(string sql) => Assert.Null(External(sql));
 
     [Theory]
@@ -218,6 +223,9 @@ public class ElasticsearchDialectTests
     [InlineData("FROM logs,.kibana*", "'.kibana'", "hidden or system index")]
     [InlineData("FROM remote:.kibana", "'.kibana'", "hidden or system index")]
     [InlineData("FROM logs | LOOKUP JOIN .enrich ON id", "'.enrich'", "hidden or system index")]
+    [InlineData("FROM logs | LOOKUP JOIN \".kibana\" ON id", "'.kibana'", "hidden or system index")]
+    [InlineData("FROM logs | lookup join \".security-7\" ON id | LIMIT 5", "'.security-7'", "hidden or system index")]
+    [InlineData("FROM logs | LOOKUP JOIN \"remote:.kibana\" ON id", "'.kibana'", "hidden or system index")]
     public void Inference_commands_and_dot_indices_are_refused_by_name(string sql, string named, string why)
     {
         var refusal = External(sql);

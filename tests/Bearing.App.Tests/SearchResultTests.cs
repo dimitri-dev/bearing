@@ -240,13 +240,24 @@ public class SearchResultTests : IDisposable
             ResultSetBuilder.DescribeResults([Rows(), Rows()], TimeSpan.FromMilliseconds(88)));
     }
 
+    /// <summary>The status line is the only place a notice is shown, so a later set's is not dropped: every
+    /// distinct notice, in result order, separated by a space.</summary>
     [Fact]
-    public void The_first_set_with_a_notice_speaks_for_the_run()
+    public void Every_distinct_notice_of_the_run_is_said_in_result_order()
     {
         var status = ResultSetBuilder.DescribeResults(
-            [Rows(), Rows("  first  "), Rows("second")], TimeSpan.FromMilliseconds(88));
+            [Rows(), Rows("  first  "), Rows(Partial)], TimeSpan.FromMilliseconds(88));
 
-        Assert.Equal("3 result sets · 88 ms — first", status);
+        Assert.Equal($"3 result sets · 88 ms — first {Partial}", status);
+    }
+
+    [Fact]
+    public void The_same_notice_on_several_sets_is_said_once()
+    {
+        var status = ResultSetBuilder.DescribeResults(
+            [Rows(Partial), Rows(), Rows($" {Partial} ")], TimeSpan.FromMilliseconds(88));
+
+        Assert.Equal($"3 result sets · 88 ms — {Partial}", status);
     }
 
     /// <summary>Both sentences, Bearing's own first: the budget notice explains the page, the server's the answer.</summary>

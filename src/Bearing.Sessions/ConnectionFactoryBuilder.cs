@@ -25,7 +25,8 @@ internal static class ConnectionFactoryBuilder
             ? new Credential(null, null)
             : await credentials.ResolveAsync(info, forceRefresh, ct);
         var provider = providers.Get(info.ProviderId);
-        var (target, tunnel) = await RouteAsync(credentials, provider, credential.ApplyTo(info), ct);
+        var target = credential.ApplyTo(info);
+        var tunnel = await RouteAsync(credentials, provider, target, ct);
         try
         {
             return (provider, CreateFactory(provider, target, credential.Secret, tunnel), credential, tunnel);
@@ -49,10 +50,10 @@ internal static class ConnectionFactoryBuilder
         ConnectionInfo info, string? password, string? sshSecret, CancellationToken ct)
     {
         var provider = providers.Get(info.ProviderId);
-        var (target, tunnel) = await RouteAsync(credentials, provider, info, ct, sshSecret);
+        var tunnel = await RouteAsync(credentials, provider, info, ct, sshSecret);
         try
         {
-            var factory = CreateFactory(provider, target, password, tunnel);
+            var factory = CreateFactory(provider, info, password, tunnel);
             try
             {
                 return await factory.TestConnectionAsync(ct);
@@ -80,7 +81,7 @@ internal static class ConnectionFactoryBuilder
     /// </summary>
     internal static IDbConnectionFactory CreateFactory(
         IDbProvider provider, ConnectionInfo info, string? password, SshTunnelHandle? tunnel)
-        => CreateFactory(provider, info, password, tunnel is null ? null : new TunnelEndpoint("127.0.0.1", tunnel.LocalPort));
+        => CreateFactory(provider, info, password, tunnel?.Endpoint);
 
     /// <summary><see cref="CreateFactory(IDbProvider, ConnectionInfo, string?, SshTunnelHandle?)"/> for a loopback
     /// end already in hand (null = no tunnel).</summary>
@@ -91,19 +92,19 @@ internal static class ConnectionFactoryBuilder
             : provider.CreateConnectionFactory(info, password, tunnel);
 
     /// <summary>
-    /// The connection to build a factory from — <paramref name="info"/> itself, <b>not</b> rewritten — and, for a
-    /// connection with an <see cref="ConnectionInfo.SshTunnel"/>, a freshly opened tunnel. The caller hands both
-    /// to <see cref="CreateFactory(IDbProvider, ConnectionInfo, string?, SshTunnelHandle?)"/>, owns the tunnel
-    /// and disposes it after the factory built on it. Only the factory sees the loopback end; sessions, messages
-    /// and pool identity keep the real host.
+    /// For a connection with an <see cref="ConnectionInfo.SshTunnel"/>, a freshly opened tunnel; null for a direct
+    /// one. <paramref name="info"/> is never rewritten: the caller hands it, as it is, and the tunnel to
+    /// <see cref="CreateFactory(IDbProvider, ConnectionInfo, string?, SshTunnelHandle?)"/>, owns the tunnel and
+    /// disposes it after the factory built on it. Only the factory sees the loopback end; sessions, messages and
+    /// pool identity keep the real host.
     /// </summary>
-    internal static async Task<(ConnectionInfo Info, SshTunnelHandle? Tunnel)> RouteAsync(
+    internal static async Task<SshTunnelHandle?> RouteAsync(
         CredentialResolver? credentials, IDbProvider provider, ConnectionInfo info, CancellationToken ct,
         string? typedSshSecret = null)
     {
         if (info.SshTunnel is null)
         {
-            return (info, null);
+            return null;
         }
         if (!provider.SupportsSshTunnel)
         {
@@ -119,8 +120,7 @@ internal static class ConnectionFactoryBuilder
             throw new ConnectionFailedException($"'{info.Name}' needs an SSH tunnel, and nothing here can open one.");
         }
         var (host, port) = ForwardTarget(provider, info);
-        var tunnel = await credentials.Ssh.OpenAsync(info, host, port, ct, typedSshSecret);
-        return (info, tunnel);
+        return await credentials.Ssh.OpenAsync(info, host, port, ct, typedSshSecret);
     }
 
     /// <summary>

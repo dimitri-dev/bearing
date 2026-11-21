@@ -1446,7 +1446,8 @@ public sealed partial class ConnectionsViewModel : ObservableObject
            && ProviderTraits.For(a).NetworkOptions.All(key =>
                string.Equals(OptionOf(a, key), OptionOf(b, key), StringComparison.Ordinal));
 
-    /// <summary>One options-bag value as a factory reads it (trimmed; blank = none), for <see cref="SameNetwork"/>.</summary>
+    /// <summary>One options-bag value as a factory reads it (trimmed; blank = none), for <see cref="SameNetwork"/>
+    /// and <see cref="SameSignIn"/>.</summary>
     private static string? OptionOf(ConnectionInfo info, string key)
         => info.Options.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value.Trim()
@@ -1469,7 +1470,24 @@ public sealed partial class ConnectionsViewModel : ObservableObject
            && SessionPolicy.TimeoutSeconds(a) == SessionPolicy.TimeoutSeconds(b)
            // Also fixed at startup (#163): without it, changing the zone and paging the result on screen would
            // keep computing in the old one off the old pool.
-           && SessionTimeZonePolicy.ZoneFor(a) == SessionTimeZonePolicy.ZoneFor(b);
+           && SessionTimeZonePolicy.ZoneFor(a) == SessionTimeZonePolicy.ZoneFor(b)
+           && SameSignIn(a, b);
+
+    /// <summary>
+    /// For an engine whose sign-in the options bag decides (<see cref="ProviderTraits.PoolOptions"/>: the
+    /// search engines' Authentication and AWS region), the same credential kind and the same values for those
+    /// options — fixed when the pool's factory is built, so Load more and Fetch all, which lease the live pool,
+    /// would otherwise go on signing in the old way after Save. True for every engine that declares none, whose
+    /// <see cref="SamePool"/> is what it was.
+    /// </summary>
+    private static bool SameSignIn(ConnectionInfo a, ConnectionInfo b)
+    {
+        var options = ProviderTraits.For(a).PoolOptions;
+
+        return options.Count == 0
+               || (a.CredentialKind == b.CredentialKind
+                   && options.All(key => string.Equals(OptionOf(a, key), OptionOf(b, key), StringComparison.Ordinal)));
+    }
 
     /// <summary>Build a throwaway connection and test it (for the dialog's Test button); nothing is persisted.
     /// For an Entra connection the token is minted through the resolver (ignoring the box); prompt / stored

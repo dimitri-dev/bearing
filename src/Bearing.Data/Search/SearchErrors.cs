@@ -90,7 +90,9 @@ internal static class SearchErrors
     /// <summary>
     /// The same judgement for a thrown exception — the connect path has no <see cref="QueryError"/>. Walks the
     /// whole chain. A 401 is <see cref="DbErrorKind.Authentication"/>; a 403 is a privilege and stays
-    /// <see cref="DbErrorKind.Unknown"/> (signing in again changes nothing).
+    /// <see cref="DbErrorKind.Unknown"/> (signing in again changes nothing). A
+    /// <see cref="SearchTransportException"/> is terminal: the handler's connect timeout arrives as a cancel
+    /// inside it, and it is no cancel of the caller's (a caller's cancel is never wrapped).
     /// </summary>
     internal static DbErrorKind Classify(Exception exception)
     {
@@ -100,6 +102,8 @@ internal static class SearchErrors
             {
                 case SearchSignInException:
                     return DbErrorKind.Authentication;
+                case SearchTransportException:
+                    return DbErrorKind.Unknown;
                 case OperationCanceledException:
                     return DbErrorKind.Canceled;
                 case SearchServerException server:
@@ -160,6 +164,11 @@ internal static class SearchErrors
         + "its own field). Choose encryption with the TLS mode.";
 
     internal const string HostMissingSentence = "Enter the host name or address of the server.";
+
+    /// <summary>The port is neither 0 (the default) nor 1–65535. Refused rather than replaced: a connection must
+    /// not quietly reach a port nobody entered.</summary>
+    internal const string PortOutOfRangeSentence =
+        "The port must be a number from 1 to 65535, or 0 for the default port (9200).";
 
     internal const string ApiKeyMissingSentence =
         "Authentication is set to API key, but no key was given. Enter the encoded API key (the form Elasticsearch "
@@ -314,7 +323,9 @@ internal static class SearchErrors
 
     /// <summary>
     /// A thrown failure as the <see cref="QueryError"/> the grid shows. <paramref name="timedOut"/> is the
-    /// caller's knowledge (its own linked token fired), not something an exception can say.
+    /// caller's knowledge (its own linked token fired), not something an exception can say. A
+    /// <see cref="SearchTransportException"/> is terminal — its own sentence ("No connection could be made within
+    /// 15 s. …"), never "canceled" from the connect timeout's cancel inside it.
     /// </summary>
     internal static QueryError ToQueryError(Exception exception, SearchEngine engine, int timeoutSeconds, bool timedOut = false)
     {
@@ -329,6 +340,8 @@ internal static class SearchErrors
             {
                 case SearchSignInException signIn:
                     return new QueryError(signIn.Message, SignInCode, null);
+                case SearchTransportException transport:
+                    return new QueryError(Scrub(transport.Message), null, null);
                 case OperationCanceledException:
                     return new QueryError("The statement was canceled.", CanceledCode, null);
                 case SearchServerException server:

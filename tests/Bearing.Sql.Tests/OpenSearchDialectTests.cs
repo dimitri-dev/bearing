@@ -221,6 +221,10 @@ public class OpenSearchDialectTests
     [InlineData("SELECT user.name FROM logs WHERE a = '.x'")]
     [InlineData("source=logs | where msg = '.x'")]
     [InlineData("search source=logs msg='.x'")]
+    // A string starting with a dot that is not an index operand (R2-11's near-misses).
+    [InlineData("source=logs | where msg = '.kibana' | head 5")]
+    [InlineData("source=logs | eval x = '.kibana'")]
+    [InlineData("source=logs | lookup idx id | where k = '.x'")]
     public void A_read_on_the_allow_list_runs(string sql) => Assert.Null(External(sql));
 
     [Theory]
@@ -254,6 +258,10 @@ public class OpenSearchDialectTests
     [InlineData("source='.kibana'", "'.kibana'", "hidden or system index")]
     [InlineData("source=logs,.security", "'.security'", "hidden or system index")]
     [InlineData("search source=\".opendistro\"", "'.opendistro'", "hidden or system index")]
+    [InlineData("source=logs | lookup '.kibana' id", "'.kibana'", "hidden or system index")]
+    [InlineData("source=logs | LOOKUP \".opendistro_security\" id | head 5", "'.opendistro_security'", "hidden or system index")]
+    [InlineData("source=logs | join on logs.id = k.id '.kibana'", "'.kibana'", "hidden or system index")]
+    [InlineData("source=logs | left join left = l right = r on l.id = r.id '.security' | head 5", "'.security'", "hidden or system index")]
     public void Ml_commands_and_dot_indices_are_refused_by_name(string sql, string named, string why)
     {
         var refusal = External(sql);

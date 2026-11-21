@@ -341,6 +341,110 @@ public class ConnectionManagementTests : IDisposable
         Assert.NotNull(ctx.Sessions.TryGet(Bearing.Sessions.SessionKey.For(conn)));
     }
 
+    // ---- sign-in settings decide the pool (search engines) -------------------------------------------------
+
+    private static ConnectionInfo SearchConn(string providerId, CredentialKind kind = CredentialKind.StoredPassword,
+        Dictionary<string, string>? options = null) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = providerId + " logs",
+        ProviderId = providerId,
+        Host = "search.example.com",
+        Port = 9200,
+        User = kind == CredentialKind.AwsProfile ? "dev" : "reader",
+        CredentialKind = kind,
+        Options = options ?? new Dictionary<string, string>(),
+    };
+
+    /// <summary>A live pool and a loaded schema for <paramref name="conn"/>, its password seeded so the connect
+    /// asks for nothing.</summary>
+    private static async Task ConnectWithSchemaAsync(WorkspaceContext ctx, FakeSecretStore secrets, ConnectionInfo conn)
+    {
+        secrets.Seed(conn.Id, "pw");
+        var session = await ctx.Sessions.GetOrConnectAsync(conn, CancellationToken.None);
+        await ctx.Sessions.EnsureSchemaAsync(session, CancellationToken.None);
+        Assert.NotNull(ctx.Sessions.TryGet(Bearing.Sessions.SessionKey.For(conn)));
+        Assert.NotNull(ctx.Sessions.TryGetSnapshot(conn.Id, conn.Database));
+    }
+
+    /// <summary>R2-13: which Authorization header Elasticsearch sends is fixed when the pool's factory is built, so
+    /// a saved change to Authentication alone drops the live pool (Load more / Fetch all lease it) — and keeps the
+    /// tree's schema, since the server is the same.</summary>
+    [Fact]
+    public async Task An_elasticsearch_authentication_only_edit_drops_the_live_pool_and_keeps_the_schema()
+    {
+        var conn = SearchConn("elasticsearch");
+        var (ctx, vm, secrets) = NewVm(conn);
+        await ConnectWithSchemaAsync(ctx, secrets, conn);
+
+        await vm.AddOrUpdateConnectionAsync(
+            conn with { Options = new Dictionary<string, string> { ["Authentication"] = "API key" } }, password: null);
+
+        Assert.Null(ctx.Sessions.TryGet(Bearing.Sessions.SessionKey.For(conn)));
+        Assert.NotNull(ctx.Sessions.TryGetSnapshot(conn.Id, conn.Database));
+    }
+
+    [Fact]
+    public async Task An_opensearch_region_only_edit_drops_the_live_pool_and_keeps_the_schema()
+    {
+        var conn = SearchConn("opensearch", CredentialKind.AwsProfile,
+            new Dictionary<string, string> { ["Region"] = "eu-west-1" });
+        var (ctx, vm, secrets) = NewVm(conn);
+        await ConnectWithSchemaAsync(ctx, secrets, conn);
+
+        await vm.AddOrUpdateConnectionAsync(
+            conn with { Options = new Dictionary<string, string> { ["Region"] = "us-east-1" } }, password: null);
+
+        Assert.Null(ctx.Sessions.TryGet(Bearing.Sessions.SessionKey.For(conn)));
+        Assert.NotNull(ctx.Sessions.TryGetSnapshot(conn.Id, conn.Database));
+    }
+
+    [Fact]
+    public async Task An_opensearch_switch_from_password_to_aws_profile_drops_the_live_pool()
+    {
+        var conn = SearchConn("opensearch");
+        var (ctx, vm, secrets) = NewVm(conn);
+        await ConnectWithSchemaAsync(ctx, secrets, conn);
+
+        await vm.AddOrUpdateConnectionAsync(conn with { CredentialKind = CredentialKind.AwsProfile }, password: null);
+
+        Assert.Null(ctx.Sessions.TryGet(Bearing.Sessions.SessionKey.For(conn)));
+    }
+
+    /// <summary>The option as the factory reads it: whitespace around the same value is the same sign-in.</summary>
+    [Fact]
+    public async Task An_authentication_differing_only_in_whitespace_keeps_the_pool()
+    {
+        var conn = SearchConn("elasticsearch", options: new Dictionary<string, string> { ["Authentication"] = "API key" });
+        var (ctx, vm, secrets) = NewVm(conn);
+        await ConnectWithSchemaAsync(ctx, secrets, conn);
+
+        await vm.AddOrUpdateConnectionAsync(
+            conn with { Options = new Dictionary<string, string> { ["Authentication"] = "  API key " } }, password: null);
+
+        Assert.NotNull(ctx.Sessions.TryGet(Bearing.Sessions.SessionKey.For(conn)));
+    }
+
+    /// <summary>The rule is the search engines' (ProviderTraits.PoolOptions): on an engine that declares none, the
+    /// same edits leave the pool as they always did.</summary>
+    [Fact]
+    public async Task On_an_engine_without_pool_options_the_same_edits_keep_the_pool()
+    {
+        var conn = Conn("prod");
+        var (ctx, vm, secrets) = NewVm(conn);
+        await ConnectWithSchemaAsync(ctx, secrets, conn);
+
+        await vm.AddOrUpdateConnectionAsync(
+            conn with
+            {
+                CredentialKind = CredentialKind.Prompt,
+                Options = new Dictionary<string, string> { ["Authentication"] = "API key", ["Region"] = "us-east-1" },
+            },
+            password: null);
+
+        Assert.NotNull(ctx.Sessions.TryGet(Bearing.Sessions.SessionKey.For(conn)));
+    }
+
     /// <summary>An import is matched by where it points: the same region and profile at another endpoint is
     /// another connection, added beside the first rather than overwriting it.</summary>
     [Fact]

@@ -205,13 +205,20 @@ internal static class ResultSetBuilder
         return ServerNotice(results) is { } notice ? $"{line} — {notice}" : line;
     }
 
-    /// <summary>The first non-blank <see cref="QueryResult.Notice"/> of a run, trimmed, or null when no result has
-    /// one. One is enough for a status line; the rest stay on their results.</summary>
+    /// <summary>Every distinct non-blank <see cref="QueryResult.Notice"/> of a run, trimmed, in result order and
+    /// joined with a space; null when no result has one. The status line is the only place a notice is shown, so
+    /// a later result's (a partial ES|QL answer as the second statement) is not dropped; the same sentence on
+    /// several results is said once.</summary>
     private static string? ServerNotice(IReadOnlyList<QueryResult> results)
-        => results
+    {
+        var notices = results
             .Select(r => r.Notice?.Trim())
             .Where(n => !string.IsNullOrEmpty(n))
-            .FirstOrDefault();
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return notices.Count == 0 ? null : string.Join(" ", notices);
+    }
 
     /// <summary>Human-friendly elapsed: "88 ms" under a second, "8.4 s" above — so a slow run reads honestly.
     /// Shared by the final run summary and the live status-bar execution timer so both read consistently.</summary>

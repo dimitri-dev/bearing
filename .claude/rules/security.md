@@ -190,14 +190,20 @@ holds before selecting `*` or an options bag.
   call it verified**; `VerifyCa` trusted chain, host name unchecked; `VerifyFull` the platform's validation.
   `Prefer` is https under Require's rule and falls back to http **only on a TLS handshake failure** (not a refusal,
   timeout, HTTP error or certificate), settled by the first answered request. OS trust store only. **Redirects are
-  never followed** (a 3xx is an error that says so). Through an SSH tunnel the socket dials the loopback end but the
-  request names the **real host** — certificate, SNI, `Host` and signature are the real server's
-  (`IDbProvider.CreateConnectionFactory(…, TunnelEndpoint)`).
+  never followed** (a 3xx is an error that says so). Port 0 is the default 9200; any other port outside 1–65535 fails
+  the connect (`PortOutOfRangeSentence`), never replaced. A connect timeout (15 s, TCP + TLS) is the transport's
+  sentence, never "canceled": `SearchTransportException` is terminal in `SearchErrors.Classify` / `ToQueryError`.
+  Through an SSH tunnel the socket dials the loopback end but the request names the **real host** — certificate,
+  SNI, `Host` and signature are the real server's (`IDbProvider.CreateConnectionFactory(…, TunnelEndpoint)`,
+  `SshTunnelHandle.Endpoint`; the old host-rewriting `Route` is gone).
 - **Sign-in is chosen by the credential kind and the Authentication field, never by whether a secret is present**
   (the dialog's Test hands over the password box whatever the kind): Basic; `Authorization: ApiKey <secret>` with no
-  user (Elasticsearch, Authentication "API key"); no header when user and secret are both blank; `AwsProfile` is
+  user (Elasticsearch, Authentication "API key"); no header when user and secret are both blank (`SearchAuthMethod.None`,
+  so a 401 says the connection has no user or password, not that credentials were refused); `AwsProfile` is
   never Basic or ApiKey. The API key and the password live in `ISecretStore` like any password (§1.1). 401 is
-  `Authentication`; 403 is a privilege. Error text goes through `SearchErrors.Scrub` (`Authorization` values,
+  `Authentication`; 403 is a privilege. A saved change to how a pool signs in — the credential kind, Elasticsearch's
+  Authentication, OpenSearch's Region (`ProviderTraits.PoolOptions`) — fails the App's `SamePool` and evicts the live
+  pool (tree and schema kept); the other engines' `SamePool` is unchanged. Error text goes through `SearchErrors.Scrub` (`Authorization` values,
   tokens, `api_key=`/`password=`, URL user-info, SigV4 `Credential=`/`Signature=`, then DynamoDB's scrub).
 - **AWS profile on OpenSearch (user decision 2026-11-21): Bearing's signer asks the AWS SDK for the resolved
   credentials on every request and signs with them in memory; they are never stored in a Bearing field, logged,
@@ -217,8 +223,9 @@ holds before selecting `*` or an options bag.
 - **The `bearing` command:** allow-lists Elasticsearch `SELECT SHOW DESCRIBE DESC FROM ROW TS`, OpenSearch `SELECT
   SHOW DESCRIBE SEARCH SOURCE INDEX`. Refused by name on top (`ExternalDeniedStatement`): ES|QL `COMPLETION`,
   `RERANK` (inference) and `INTO`; PPL `ml`, `kmeans`, `ad` and `rest` (also as a first word); any index name
-  starting with `.` (bare, quoted or backticked; a string only where it names the source). Accident prevention, not
-  a boundary (§1.11b). A dialect's own refusal sentence (one ending in `.`) is returned as written by
+  starting with `.` (bare, quoted or backticked; a string only where it names an index: the source, or after a pipe
+  the operand of ES|QL `LOOKUP JOIN`, PPL `lookup` / `join` — `SearchScan.NamesAJoinedIndex`; a string in `WHERE` /
+  `EVAL` or an `ENRICH` policy is not checked). Accident prevention, not a boundary (§1.11b). A dialect's own refusal sentence (one ending in `.`) is returned as written by
   `ExternalSqlPolicy`, never wrapped in the credentials sentence. `explain` is refused.
 - The continuation (cursor + column layout) is memory-only — never logged, persisted or shown (§1.3). A later-page
   value that does not fit its column fails the page naming the column, its type and the **kind** of value ("a JSON

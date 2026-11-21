@@ -367,6 +367,8 @@ public class SearchLiveTests
 
         var refused = await Assert.ThrowsAsync<SearchTransportException>(() => factory.TestConnectionAsync(None));
 
+        // A TLS failure (the certificate refused during the handshake), not a refused connection or an HTTP error.
+        Assert.Equal(System.Net.Http.HttpRequestError.SecureConnectionError, refused.Error);
         Assert.DoesNotContain(SearchTestServer.SecurePassword, refused.Message);
         Assert.NotEqual(DbErrorKind.Authentication, SearchTestServer.Provider(Es).ClassifyException(refused));
     }
@@ -514,6 +516,70 @@ public class SearchLiveTests
             Assert.False(result.Truncated);
             Assert.Equal(Math.Min(250, sizeLimit), result.Rows.Count);
         }
+    }
+
+    /// <summary>
+    /// R2-10, measured on OpenSearch 3.10.0: an answer cut by the cluster's <c>plugins.query.size_limit</c> gives
+    /// <b>no sign</b> of the cut. With the limit lowered to 5 (a <c>transient</c> setting, reset to null in
+    /// <c>finally</c>) over 30 documents, a SQL <c>LIMIT 20</c>, a <c>DISTINCT</c>, a <c>GROUP BY</c>, a PPL
+    /// <c>fields</c> and a PPL <c>stats … by</c> each answer HTTP 200 with 5 rows, <c>"total": 5</c> and
+    /// <c>"size": 5</c> — <c>total</c> is the rows returned, not the rows that matched — no cursor, no warning
+    /// header and no <c>warnings[]</c>. So Bearing has nothing to say it with and says nothing: the result is 5
+    /// rows, not truncated, with no notice. (Guessing from a row count equal to the limit would be a guess.)
+    /// </summary>
+    [SkippableFact]
+    public async Task Measured_15_an_answer_cut_by_the_opensearch_size_limit_carries_no_signal()
+    {
+        await SearchTestServer.RequireAsync(Os);
+        await using var fx = SearchTestServer.Fixtures(Os);
+        var index = await PagingIndexAsync(fx, 30);
+        const int cap = 5;
+        string after;
+
+        var lowered = await fx.SendAsync(
+            HttpMethod.Put, "/_cluster/settings", $$$"""{"transient":{"plugins.query.size_limit":{{{cap}}}}}""");
+        Assert.Equal(200, lowered.StatusCode);
+        try
+        {
+            foreach (var (path, statement) in new[]
+            {
+                ("/_plugins/_sql", $"select id from {index} limit 20"),
+                ("/_plugins/_sql", $"select distinct id from {index}"),
+                ("/_plugins/_sql", $"select id, count(*) from {index} group by id"),
+                ("/_plugins/_ppl", $"source={index} | fields id"),
+                ("/_plugins/_ppl", $"source={index} | stats count() by id"),
+            })
+            {
+                var raw = await fx.SendAsync(HttpMethod.Post, path, JsonSerializer.Serialize(new { query = statement }));
+                Assert.Equal(200, raw.StatusCode);
+                Assert.Empty(raw.Warnings);
+                using (var json = raw.Json())
+                {
+                    var root = json.RootElement;
+                    Assert.Equal(cap, root.GetProperty("datarows").GetArrayLength());
+                    Assert.Equal(cap, root.GetProperty("total").GetInt32());
+                    Assert.Equal(cap, root.GetProperty("size").GetInt32());
+                    Assert.False(root.TryGetProperty("cursor", out _), statement);
+                    Assert.False(root.TryGetProperty("warnings", out _), statement);
+                }
+
+                // Through Bearing: the rows that came, whole, and no claim either way.
+                var result = Assert.Single(await RunAsync(SearchTestServer.Info(Os), statement, maxRows: 100));
+                Assert.True(result.Success, $"{statement}: {result.Error?.Message}");
+                Assert.Equal(cap, result.Rows.Count);
+                Assert.False(result.Truncated);
+                Assert.Null(result.Continuation);
+                Assert.Null(result.Notice);
+            }
+        }
+        finally
+        {
+            await fx.SendAsync(HttpMethod.Put, "/_cluster/settings", """{"transient":{"plugins.query.size_limit":null}}""");
+            after = (await fx.SendAsync(HttpMethod.Get, "/_cluster/settings?flat_settings=true", null)).Body;
+        }
+
+        // The node is left as it was found: no transient size limit.
+        Assert.DoesNotContain("plugins.query.size_limit", after);
     }
 
     /// <summary>Measurement 2. The exact errors for a closed and for an unknown cursor. A closed one is HTTP 404 on

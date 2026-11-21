@@ -617,6 +617,66 @@ public class SearchQueryExecutorTests
         Assert.Equal(SearchErrors.TimeoutSentence(SearchEngine.OpenSearch, 1), thrown.Message);
     }
 
+    /// <summary>R2-9: a streamed read is exactly one statement — two, none, or a bare <c>;</c> is refused before
+    /// anything is sent.</summary>
+    [Theory]
+    [InlineData("SELECT n FROM logs; SELECT m FROM logs")]
+    [InlineData("")]
+    [InlineData(";")]
+    [InlineData("  -- only a comment\n")]
+    public async Task A_stream_of_anything_but_exactly_one_statement_is_refused_and_sends_nothing(string sql)
+    {
+        var api = new FakeSearchApi(_ => SqlFirst(SearchEngine.Elasticsearch, 1));
+
+        var refused = await Assert.ThrowsAsync<NotSupportedException>(
+            () => Stream(Executor(api, SearchEngine.Elasticsearch), sql, new QueryOptions()));
+
+        Assert.StartsWith("A streamed read runs exactly one statement", refused.Message);
+        Assert.Empty(api.Requests);
+    }
+
+    // ---- the response ceiling --------------------------------------------------------------------------
+
+    /// <summary>R2-8: every request the executor makes is held to the 64 MB ceiling — first page, continuation and
+    /// stream alike.</summary>
+    [Fact]
+    public async Task Every_request_is_held_to_the_default_response_ceiling()
+    {
+        var api = new FakeSearchApi(r => r.Query is not null
+            ? SqlFirst(SearchEngine.Elasticsearch, 1, cursor: "c1")
+            : SqlLater(SearchEngine.Elasticsearch, [[2, "\"b\""]], null));
+        var executor = Executor(api, SearchEngine.Elasticsearch);
+
+        var first = Assert.Single(await executor.ExecuteAsync("SELECT n, name FROM logs", new QueryOptions(), CancellationToken.None));
+        await executor.ExecuteContinuationAsync(first.Continuation!, 1, CancellationToken.None);
+        await Stream(executor, "SELECT n, name FROM logs", new QueryOptions { BatchRows = 10 });
+
+        Assert.Equal(4, api.Requests.Count); // first page, continuation, stream's first page and its cursor
+        Assert.All(api.Requests, r => Assert.Equal(SearchConnectionFactory.DefaultResponseLimitBytes, r.MaxResponseBytes));
+    }
+
+    /// <summary>R2-8: an answer over the ceiling is the result's error, in the factory's sentence — on a first page
+    /// and on a continuation.</summary>
+    [Fact]
+    public async Task An_answer_over_the_ceiling_is_the_results_error_in_the_too_large_sentence()
+    {
+        var api = new FakeSearchApi(_ => SqlFirst(SearchEngine.Elasticsearch, 1, cursor: "c1"));
+        var executor = Executor(api, SearchEngine.Elasticsearch);
+        var first = Assert.Single(await executor.ExecuteAsync("SELECT n FROM logs", new QueryOptions(), CancellationToken.None));
+        api.Throw = new SearchResponseTooLargeException(SearchConnectionFactory.DefaultResponseLimitBytes);
+
+        var statement = Assert.Single(await executor.ExecuteAsync("SELECT n FROM logs", new QueryOptions(), CancellationToken.None));
+        var continuation = await executor.ExecuteContinuationAsync(first.Continuation!, 1, CancellationToken.None);
+
+        var sentence = SearchErrors.TooLargeSentence(SearchConnectionFactory.DefaultResponseLimitBytes);
+        Assert.Equal("The server's answer is larger than 64 MB, the most Bearing reads for one request.", sentence);
+        Assert.False(statement.Success);
+        Assert.Equal(sentence, statement.Error!.Message);
+        Assert.False(continuation.Success);
+        Assert.Equal(sentence, continuation.Error!.Message);
+        Assert.Equal(0, continuation.StatementIndex);
+    }
+
     // ---- what these engines do not offer ---------------------------------------------------------------
 
     [Theory]
@@ -711,7 +771,7 @@ public class SearchQueryExecutorTests
     private static SearchResponse Error(int status, string body) => new(status, Encoding.UTF8.GetBytes(body), []);
 
     /// <summary>One request as the fake saw it: the method, the path and the body as text.</summary>
-    private sealed record Sent(HttpMethod Method, string Path, string Body)
+    private sealed record Sent(HttpMethod Method, string Path, string Body, long MaxResponseBytes)
     {
         public JsonElement? Field(string name)
         {
@@ -740,11 +800,18 @@ public class SearchQueryExecutorTests
 
         public bool Canceled { get; private set; }
 
+        /// <summary>Thrown for every request (after it is recorded) instead of answering.</summary>
+        public Exception? Throw { get; set; }
+
         public async Task<SearchResponse> SendAsync(
             HttpMethod method, string pathAndQuery, byte[]? jsonBody, long maxResponseBytes, CancellationToken ct)
         {
-            var sent = new Sent(method, pathAndQuery, jsonBody is null ? "" : Encoding.UTF8.GetString(jsonBody));
+            var sent = new Sent(method, pathAndQuery, jsonBody is null ? "" : Encoding.UTF8.GetString(jsonBody), maxResponseBytes);
             Requests.Add(sent);
+            if (Throw is { } failure)
+            {
+                throw failure;
+            }
 
             if (Delay is { } delay)
             {

@@ -127,8 +127,7 @@ public class SshTunnelTests
     public async Task A_direct_connection_routes_to_itself_without_opening_anything()
     {
         var info = new ConnectionInfo { Id = Guid.NewGuid(), Name = "x", ProviderId = "mysql", Host = "db", Port = 3306 };
-        var (target, tunnel) = await ConnectionFactoryBuilder.RouteAsync(null, new ProviderRegistry().Get("mysql"), info, default);
-        Assert.Same(info, target);
+        var tunnel = await ConnectionFactoryBuilder.RouteAsync(null, new ProviderRegistry().Get("mysql"), info, default);
         Assert.Null(tunnel);
     }
 
@@ -249,7 +248,7 @@ public class SshTunnelTests
         Assert.Equal(1, provider.Calls);
         Assert.Equal("127.0.0.1", provider.SeenInfo!.Host);
         Assert.Equal(40123, provider.SeenInfo.Port);
-        // The default member changes the host and port and nothing else, as SshTunnelHandle.Route did.
+        // The default member changes the host and port and nothing else, the rewrite a TCP driver needs.
         Assert.Equal(Saved with { Host = "127.0.0.1", Port = 40123 }, provider.SeenInfo);
         // The saved record is untouched: pool identity and messages keep the real host.
         Assert.Equal("search.internal", Saved.Host);

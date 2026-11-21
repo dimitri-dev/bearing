@@ -270,6 +270,29 @@ public class SearchErrorsTests
 
         Assert.Equal("The statement was canceled.", error.Message);
         Assert.Equal(SearchErrors.CanceledCode, error.SqlState);
+        Assert.Equal(DbErrorKind.Canceled, SearchErrors.Classify(new OperationCanceledException()));
+    }
+
+    /// <summary>R2-3: the handler's connect timeout reaches the factory as a cancel nobody asked for, kept as the
+    /// transport exception's inner exception. The transport exception is terminal: its own sentence, not
+    /// "canceled", and not classified as a cancel.</summary>
+    [Fact]
+    public void A_transport_failure_holding_a_cancel_is_the_transport_sentence_not_a_cancel()
+    {
+        var timeout = new TaskCanceledException(
+            "The operation was canceled.", new TimeoutException("A connection could not be established within the configured ConnectTimeout."));
+        var failure = new SearchTransportException(
+            "No connection could be made within 15 s. The operation was canceled: A connection could not be established within the configured ConnectTimeout.",
+            null, timeout);
+
+        var error = SearchErrors.ToQueryError(failure, SearchEngine.Elasticsearch, 30);
+
+        Assert.Equal(DbErrorKind.Unknown, SearchErrors.Classify(failure));
+        Assert.Equal(DbErrorKind.Unknown, SearchErrors.Classify(new InvalidOperationException("wrapped", failure)));
+        Assert.Equal(failure.Message, error.Message);
+        Assert.StartsWith("No connection could be made within 15 s.", error.Message);
+        Assert.NotEqual(SearchErrors.CanceledCode, error.SqlState);
+        Assert.Null(error.SqlState);
     }
 
     [Theory]

@@ -625,6 +625,12 @@ public sealed class SshTunnelHandle : IAsyncDisposable
     /// <summary>The loopback port the driver should connect to.</summary>
     public int LocalPort => (int)_forward.BoundPort;
 
+    /// <summary>Where to dial: the forward's bind address (<c>127.0.0.1</c>, never another interface) and
+    /// <see cref="LocalPort"/>. Handed to <see cref="IDbProvider.CreateConnectionFactory(DbConnectionInfo, string?, TunnelEndpoint)"/>,
+    /// which decides whether the record's host is rewritten (a driver that names its server by the address it
+    /// dials) or kept (an HTTP engine, whose <c>Host</c> header, SNI and signature name the real server).</summary>
+    public TunnelEndpoint Endpoint => new("127.0.0.1", LocalPort);
+
     /// <summary>False once the SSH session has ended (or the handle was disposed): nothing more will reach the
     /// database through <see cref="LocalPort"/>.</summary>
     public bool IsAlive
@@ -678,9 +684,6 @@ public sealed class SshTunnelHandle : IAsyncDisposable
             }
         }
     }
-
-    /// <summary><paramref name="info"/> pointed at this tunnel's loopback end.</summary>
-    public DbConnectionInfo Route(DbConnectionInfo info) => info with { Host = "127.0.0.1", Port = LocalPort };
 
     public ValueTask DisposeAsync()
     {
