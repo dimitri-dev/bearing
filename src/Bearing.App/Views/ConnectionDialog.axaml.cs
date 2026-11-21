@@ -484,6 +484,8 @@ public partial class ConnectionDialog : Window
     {
         var kind = SelectedCredentialKind();
         var stored = CredentialKindOptions.KeepsAStoredPassword(kind) && _model.HasPasswordField;
+        // Re-read on every call: an engine change ends here (RebuildCredentialKinds), and the label is the provider's.
+        PasswordLabel.Text = _model.PasswordLabel;
         PasswordLabel.IsVisible = stored;
         PasswordBox.IsVisible = stored;
         NoStorageWarning.IsVisible = stored && !_storage.CanStore;
@@ -493,7 +495,12 @@ public partial class ConnectionDialog : Window
         // Entra is only offered where the engine supports it, so this also keeps it off engines with no Azure flavour.
         BrowseAzureButton.IsVisible = _azure is not null && kind == CredentialKind.EntraToken;
         IntegratedHint.IsVisible = kind == CredentialKind.Integrated;
-        AwsProfileHint.IsVisible = kind == CredentialKind.AwsProfile;
+        // The sentence is per engine (ProviderTraits.AwsProfileNote): DynamoDB's SDK alone uses the resolved
+        // credentials, OpenSearch's requests are signed by Bearing with them, so one shared sentence would be false
+        // on one of the two. No note, no hint — an engine without one never offers the kind anyway.
+        var awsNote = ProviderTraits.For(_model.ProviderId).AwsProfileNote;
+        AwsProfileHint.Text = awsNote ?? "";
+        AwsProfileHint.IsVisible = kind == CredentialKind.AwsProfile && awsNote is not null;
         UserFromLoginBox.IsVisible = UserFromLoginOffered();
         if (_userBox is not null)
         {

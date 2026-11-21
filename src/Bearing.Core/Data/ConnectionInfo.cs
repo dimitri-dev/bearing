@@ -201,13 +201,13 @@ public sealed record ConnectionInfo
 /// <para>
 /// Added last and optional so every existing positional <c>new ConnectionField(…)</c> still compiles: this
 /// record is constructed by each provider, and a required parameter in the middle would be a breaking change
-/// to a <c>Core</c> contract for the sake of a field kind nothing declares yet.
+/// to a <c>Core</c> contract for the sake of a field kind nothing declared at the time.
 /// </para>
 /// <para>
-/// <b>No shipped provider declares one.</b> Both engines' would-be dropdowns became typed fields —
-/// <c>sslmode</c> and SQL Server's <c>Encrypt</c>/<c>TrustServerCertificate</c> are all
-/// <see cref="ConnectionInfo.Tls"/> now (#23) — so this is a capability with no production user. It exists
-/// because the kind already existed and rendered as a text box, which is a worse answer than either a
+/// <b>Elasticsearch's <c>Authentication</c> ("User and password" / "API key") is the one shipped Choice
+/// field.</b> The earlier engines' would-be dropdowns became typed fields — <c>sslmode</c> and SQL Server's
+/// <c>Encrypt</c>/<c>TrustServerCertificate</c> are all <see cref="ConnectionInfo.Tls"/> now (#23). The list
+/// exists because the kind already existed and rendered as a text box, which is a worse answer than either a
 /// dropdown or no kind at all: a Choice field whose candidates the dialog could not show let the user type
 /// a value the provider never offered.
 /// </para>

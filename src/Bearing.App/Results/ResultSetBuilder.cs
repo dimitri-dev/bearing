@@ -198,10 +198,20 @@ internal static class ResultSetBuilder
 
         // A first page the engine's request budget cut short holds fewer rows than a page and still has more
         // behind it; only the engine's own sentence says which, so it rides along (Behaviour 6).
-        return results.Select(ContinuationPaging.BudgetNotice).FirstOrDefault(n => n is not null) is { } notice
-            ? $"{line} — {notice}"
-            : line;
+        if (results.Select(ContinuationPaging.BudgetNotice).FirstOrDefault(n => n is not null) is { } budget)
+            line = $"{line} — {budget}";
+        // What the server said about its rows (QueryResult.Notice — an answer marked partial, a warning) goes after
+        // ours: it is the server's sentence, never one of Bearing's, and the result's meta row has no room for it.
+        return ServerNotice(results) is { } notice ? $"{line} — {notice}" : line;
     }
+
+    /// <summary>The first non-blank <see cref="QueryResult.Notice"/> of a run, trimmed, or null when no result has
+    /// one. One is enough for a status line; the rest stay on their results.</summary>
+    private static string? ServerNotice(IReadOnlyList<QueryResult> results)
+        => results
+            .Select(r => r.Notice?.Trim())
+            .Where(n => !string.IsNullOrEmpty(n))
+            .FirstOrDefault();
 
     /// <summary>Human-friendly elapsed: "88 ms" under a second, "8.4 s" above — so a slow run reads honestly.
     /// Shared by the final run summary and the live status-bar execution timer so both read consistently.</summary>

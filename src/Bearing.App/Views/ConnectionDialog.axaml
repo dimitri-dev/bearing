@@ -125,7 +125,8 @@
                       IsVisible="False" Margin="6,6,0,0" Padding="8,2" VerticalAlignment="Stretch"
                       ToolTip.Tip="Browse Azure — pick a server and database your `az login` can see"/>
 
-              <TextBlock Grid.Row="1" Grid.Column="0" x:Name="PasswordLabel" Text="Password" VerticalAlignment="Center" Margin="0,6,0,0"/>
+              <TextBlock Grid.Row="1" Grid.Column="0" x:Name="PasswordLabel" Text="Password" VerticalAlignment="Center" Margin="0,6,0,0"
+                         TextWrapping="Wrap"/>
               <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="PasswordBox" PasswordChar="•" Margin="0,6,0,0"/>
             </Grid>
 
@@ -141,8 +142,8 @@
             <TextBlock x:Name="IntegratedHint" IsVisible="False" TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="90,4,0,0"
                        Text="Connects as the Windows account running Bearing. No password is stored, prompted for, or read from the keychain."/>
 
-            <TextBlock x:Name="AwsProfileHint" IsVisible="False" TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="90,4,0,0"
-                       Text="Signs in through the AWS SDK with the profile named above (or its default credential chain when blank). Bearing's own code never reads, stores or asks for an AWS secret — the AWS SDK resolves the profile."/>
+            <!-- Text is per engine (ProviderTraits.AwsProfileNote), set in code-behind with the hint's visibility. -->
+            <TextBlock x:Name="AwsProfileHint" IsVisible="False" TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="90,4,0,0"/>
 
             <!-- No keychain: nothing is stored anywhere, so say what will happen instead — and why, which the
                  code-behind fills in from what the store actually reported (SecretStorageAdvice). -->

@@ -186,6 +186,22 @@ public sealed class ConnectionFieldModel
     public bool HasPasswordField
         => Provider.ConnectionFields.Any(f => string.Equals(f.Key, PasswordKey, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>The label the provider gave its <c>Password</c> field, for the dialog's own password box — which
+    /// is not one of <see cref="Fields"/> (the secret is the secret store's, §1.1), so the label would otherwise
+    /// never reach the screen. Elasticsearch's box holds a password or an encoded API key and says so; an engine
+    /// that declares no password field, or a blank label, reads "Password", the box's name before providers could
+    /// label it.</summary>
+    public string PasswordLabel
+        => Provider.ConnectionFields
+                .Where(f => string.Equals(f.Key, PasswordKey, StringComparison.OrdinalIgnoreCase))
+                .Select(f => f.Label?.Trim())
+                .FirstOrDefault() is { Length: > 0 } label
+            ? label
+            : DefaultPasswordLabel;
+
+    /// <summary>The password box's label when the provider gives none.</summary>
+    private const string DefaultPasswordLabel = "Password";
+
     /// <summary>
     /// A fresh model for <paramref name="provider"/>, filled from <paramref name="existing"/> when there is
     /// one and from the provider's defaults when there is not. An existing connection keeps <b>every</b>

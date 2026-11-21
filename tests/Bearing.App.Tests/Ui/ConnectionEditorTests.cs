@@ -14,6 +14,7 @@ using Bearing.Data;
 using Bearing.Data.DynamoDb;
 using Bearing.Data.MySql;
 using Bearing.Data.Postgres;
+using Bearing.Data.Search;
 using Bearing.Data.SqlServer;
 using Bearing.Sessions;
 using Xunit;
@@ -52,7 +53,7 @@ public class ConnectionEditorTests
     /// (<c>ProviderRegistry</c>: PostgreSQL first, because it is the engine every existing project file
     /// names; Amazon DynamoDB, the one non-relational engine, last).</summary>
     private static readonly string[] Engines =
-        { "PostgreSQL", "Microsoft SQL Server", "MySQL / MariaDB", "Amazon DynamoDB" };
+        { "PostgreSQL", "Microsoft SQL Server", "MySQL / MariaDB", "Amazon DynamoDB", "Elasticsearch", "OpenSearch" };
 
     private const string Integrated = "Windows / integrated authentication";
 
@@ -959,6 +960,194 @@ public class ConnectionEditorTests
         browser.Close();
     });
 
+    // ---- Elasticsearch and OpenSearch (the fifth and sixth engines) -------------------------------------
+
+    private const int Elasticsearch = 4;
+    private const int OpenSearch = 5;
+
+    /// <summary>DynamoDB's AWS-profile sentence as the dialog carried it before the hint became per engine — kept
+    /// word for word here so a change to it is a deliberate edit of this test, not a side effect.</summary>
+    private const string DynamoDbAwsNote =
+        "Signs in through the AWS SDK with the profile named above (or its default credential chain when blank). "
+        + "Bearing's own code never reads, stores or asks for an AWS secret — the AWS SDK resolves the profile.";
+
+    private static string PasswordLabelText(ConnectionDialog dialog)
+        => dialog.FindControl<TextBlock>("PasswordLabel")!.Text ?? "";
+
+    private static string AwsHintText(ConnectionDialog dialog)
+        => dialog.FindControl<TextBlock>("AwsProfileHint")!.Text ?? "";
+
+    /// <summary>
+    /// Each search engine's rows (spec Behaviour 1): Host, Port at 9200, User and the engine's own extra field — no
+    /// Database — with TLS and the SSH tab shown and Manual commit and the session zone hidden, and the settings
+    /// every engine has still there.
+    /// </summary>
+    [Theory]
+    [InlineData(Elasticsearch, "Authentication")]
+    [InlineData(OpenSearch, "Region")]
+    public Task A_search_engine_shows_its_fields_tls_and_ssh_and_hides_manual_commit_and_the_zone(int engine, string extra)
+        => _ui.Run(() =>
+        {
+            var dialog = ConnectionEditorProbe.Dialog();
+            ConnectionEditorProbe.Combo(dialog, "ProviderBox").SelectedIndex = engine;
+
+            Assert.Equal(new[] { "Host", "Port", "User", extra }, ConnectionEditorProbe.FieldKeys(dialog));
+            Assert.Equal("9200", ConnectionEditorProbe.Editor<TextBox>(dialog, "Port").Text);
+            Assert.True(Visible(dialog, "TlsGroup"));
+            Assert.True(Visible(dialog, "SshTab"));
+            Assert.False(Visible(dialog, "ManualCommitBox"));
+            Assert.False(Visible(dialog, "TimeZoneGroup"));
+            Assert.False(Visible(dialog, "ScanGroup"));
+            Assert.True(Visible(dialog, "ConfirmWritesBox"));
+            Assert.True(Visible(dialog, "ReadOnlyBox"));
+            Assert.True(Visible(dialog, "StatementTimeoutBox"));
+            Assert.True(Visible(dialog, "ExternalAccessBox"));
+            Assert.True(Visible(dialog, "PasswordBox"));
+            Assert.True(Visible(dialog, "PasswordLabel"));
+
+            var built = dialog.BuildConnection();
+            Assert.Equal(engine == Elasticsearch ? "elasticsearch" : "opensearch", built.ProviderId);
+            Assert.Equal(9200, built.Port);
+            Assert.False(built.ManualCommit);
+        });
+
+    [Fact]
+    public Task Elasticsearch_offers_the_two_password_kinds_and_opensearch_adds_the_aws_profile() => _ui.Run(() =>
+    {
+        var dialog = ConnectionEditorProbe.Dialog();
+        var providers = ConnectionEditorProbe.Combo(dialog, "ProviderBox");
+
+        providers.SelectedIndex = Elasticsearch;
+        Assert.Equal(new[] { "Stored password", "Prompt each time (not saved)" },
+            ConnectionEditorProbe.Items(dialog, "CredentialKindBox"));
+
+        providers.SelectedIndex = OpenSearch;
+        Assert.Equal(new[] { "Stored password", "Prompt each time (not saved)", "AWS profile" },
+            ConnectionEditorProbe.Items(dialog, "CredentialKindBox"));
+    });
+
+    /// <summary>The dialog's own password box takes the provider's label (it is not a provider-declared row, so
+    /// nothing else would carry it), and gives it back when the engine changes.</summary>
+    [Fact]
+    public Task The_password_label_follows_the_engine() => _ui.Run(() =>
+    {
+        var dialog = ConnectionEditorProbe.Dialog();
+        var providers = ConnectionEditorProbe.Combo(dialog, "ProviderBox");
+
+        Assert.Equal("Password", PasswordLabelText(dialog));
+
+        providers.SelectedIndex = Elasticsearch;
+        Assert.Equal("Password or API key", PasswordLabelText(dialog));
+
+        providers.SelectedIndex = OpenSearch;
+        Assert.Equal("Password", PasswordLabelText(dialog));
+
+        providers.SelectedIndex = Elasticsearch;
+        providers.SelectedIndex = 0;
+        Assert.Equal("Password", PasswordLabelText(dialog));
+    });
+
+    [Fact]
+    public Task An_edited_elasticsearch_connection_opens_with_its_label() => _ui.Run(() =>
+    {
+        var dialog = ConnectionEditorProbe.Dialog(Saved("elasticsearch", port: 9200));
+
+        Assert.Equal(Elasticsearch, ConnectionEditorProbe.Combo(dialog, "ProviderBox").SelectedIndex);
+        Assert.Equal("Password or API key", PasswordLabelText(dialog));
+        Assert.Equal("9200", ConnectionEditorProbe.Editor<TextBox>(dialog, "Port").Text);
+    });
+
+    /// <summary>
+    /// The AWS-profile hint is the engine's own sentence (<see cref="ProviderTraits.AwsProfileNote"/>): OpenSearch's
+    /// says Bearing signs with the resolved credentials, which DynamoDB's "Bearing's own code never reads … an AWS
+    /// secret" would contradict; DynamoDB's is unchanged.
+    /// </summary>
+    [Fact]
+    public Task The_aws_profile_hint_is_the_engines_own_sentence() => _ui.Run(() =>
+    {
+        var dialog = ConnectionEditorProbe.Dialog();
+        var providers = ConnectionEditorProbe.Combo(dialog, "ProviderBox");
+
+        providers.SelectedIndex = OpenSearch;
+        // Not on a password kind: the hint is the AWS kind's alone.
+        Assert.False(Visible(dialog, "AwsProfileHint"));
+        ConnectionEditorProbe.Combo(dialog, "CredentialKindBox").SelectedIndex = 2;
+        Assert.Equal(CredentialKind.AwsProfile, dialog.BuildConnection().CredentialKind);
+        Assert.True(Visible(dialog, "AwsProfileHint"));
+        Assert.Equal(ProviderTraits.OpenSearch.AwsProfileNote, AwsHintText(dialog));
+        Assert.Contains("signs with the resolved credentials in memory", AwsHintText(dialog));
+        Assert.DoesNotContain("never reads", AwsHintText(dialog));
+        // The password row goes, as for DynamoDB: nothing is stored under this kind.
+        Assert.False(Visible(dialog, "PasswordBox"));
+
+        providers.SelectedIndex = DynamoDb;
+        Assert.True(Visible(dialog, "AwsProfileHint"));
+        Assert.Equal(DynamoDbAwsNote, AwsHintText(dialog));
+
+        // Back to an engine with no AWS sign-in: the kind cannot be kept, and the hint goes with it.
+        providers.SelectedIndex = Elasticsearch;
+        Assert.False(Visible(dialog, "AwsProfileHint"));
+    });
+
+    [Fact]
+    public Task A_new_elasticsearch_connection_starts_on_user_and_password() => _ui.Run(() =>
+    {
+        var dialog = ConnectionEditorProbe.Dialog();
+        ConnectionEditorProbe.Combo(dialog, "ProviderBox").SelectedIndex = Elasticsearch;
+
+        var auth = ConnectionEditorProbe.Editor<ComboBox>(dialog, "Authentication");
+        Assert.Equal(new[] { "User and password", "API key" }, auth.Items.Cast<string>());
+        Assert.Equal(0, auth.SelectedIndex);
+        Assert.Single(ConnectionEditorProbe.Named(dialog, "AuthenticationFieldHint"));
+        // The default is not written (the factory reads an absent key as "User and password").
+        Assert.False(dialog.BuildConnection().Options.ContainsKey("Authentication"));
+
+        auth.SelectedIndex = 1;
+        Assert.Equal("API key", dialog.BuildConnection().Options["Authentication"]);
+    });
+
+    [Fact]
+    public Task A_saved_elasticsearch_api_key_connection_reopens_with_that_choice() => _ui.Run(() =>
+    {
+        var saved = Saved("elasticsearch", port: 9243) with
+        {
+            Database = "",
+            Options = new Dictionary<string, string> { ["Authentication"] = "API key" },
+        };
+        var dialog = ConnectionEditorProbe.Dialog(saved);
+
+        var auth = ConnectionEditorProbe.Editor<ComboBox>(dialog, "Authentication");
+        Assert.Equal(1, auth.SelectedIndex);
+        Assert.Equal("API key", auth.SelectedItem);
+
+        var built = dialog.BuildConnection();
+        Assert.Equal("API key", built.Options["Authentication"]);
+        Assert.Equal(9243, built.Port);
+        Assert.Equal("db.example.test", built.Host);
+    });
+
+    [Fact]
+    public Task A_saved_opensearch_region_reopens_in_its_box_and_saves_back() => _ui.Run(() =>
+    {
+        var saved = Saved("opensearch", port: 443) with
+        {
+            Database = "",
+            CredentialKind = CredentialKind.AwsProfile,
+            Options = new Dictionary<string, string> { ["Region"] = "eu-west-1" },
+        };
+        var dialog = ConnectionEditorProbe.Dialog(saved);
+
+        Assert.Equal(OpenSearch, ConnectionEditorProbe.Combo(dialog, "ProviderBox").SelectedIndex);
+        Assert.Equal("eu-west-1", ConnectionEditorProbe.Text(dialog, "Region"));
+        Assert.True(Visible(dialog, "AwsProfileHint"));
+        Assert.Equal(ProviderTraits.OpenSearch.AwsProfileNote, AwsHintText(dialog));
+
+        var built = dialog.BuildConnection();
+        Assert.Equal(CredentialKind.AwsProfile, built.CredentialKind);
+        Assert.Equal("eu-west-1", built.Options["Region"]);
+        Assert.Equal(443, built.Port);
+    });
+
     private static T Named<T>(Window window, string name) where T : Control
         => Assert.IsType<T>(window.GetLogicalDescendants().OfType<Control>().Where(c => c.Name == name).Distinct().Single());
 
@@ -1000,12 +1189,16 @@ internal static class ConnectionEditorProbe
         [new AwsConfigProfile("dev", "eu-west-1"), new AwsConfigProfile("ci", null)];
 
     /// <summary>
-    /// The registry <see cref="ProviderRegistry"/> builds by default — the same four engines in the same order —
+    /// The registry <see cref="ProviderRegistry"/> builds by default — the same six engines in the same order —
     /// except that DynamoDB's AWS profiles come from <see cref="Profiles"/>: the default reads this machine's
-    /// <c>~/.aws/config</c>, which a test must never do.
+    /// <c>~/.aws/config</c>, which a test must never do. (The search engines' region suggestions are the SDK's
+    /// built-in table, no file.)
     /// </summary>
     public static ProviderRegistry Registry()
-        => new([new PostgresProvider(), new SqlServerProvider(), new MySqlProvider(), new DynamoDbProvider(() => Profiles)]);
+        => new([
+            new PostgresProvider(), new SqlServerProvider(), new MySqlProvider(), new DynamoDbProvider(() => Profiles),
+            SearchProvider.Elasticsearch(), SearchProvider.OpenSearch(),
+        ]);
 
     /// <summary>
     /// The same dialog, shown and laid out — which only the tests that <see cref="Type"/> need, because

@@ -5,6 +5,7 @@ using Bearing.App.Connections;
 using Bearing.Core.Data;
 using Bearing.Data.DynamoDb;
 using Bearing.Data.Postgres;
+using Bearing.Data.Search;
 using Bearing.Data.SqlServer;
 using Bearing.Sessions;
 using Xunit;
@@ -725,6 +726,8 @@ public class ConnectionFieldModelTests
     [InlineData("sqlserver", true, true, false, false)]
     [InlineData("mysql", true, true, false, false)]
     [InlineData("dynamodb", false, false, false, true)]
+    [InlineData("elasticsearch", true, false, false, false)]
+    [InlineData("opensearch", true, false, false, false)]
     public void The_model_answers_the_editors_row_questions_from_the_provider(
         string providerId, bool tls, bool manualCommit, bool timeZone, bool asksScans)
     {
@@ -888,5 +891,172 @@ public class ConnectionFieldModelTests
 
         Assert.Equal("orders", model.Get("Database"));
         Assert.Equal("1433", model.Get("Port"));
+    }
+
+    // ---- Elasticsearch and OpenSearch ---------------------------------------------------------------
+
+    private static readonly SearchProvider Es = SearchProvider.Elasticsearch();
+    private static readonly SearchProvider Os = SearchProvider.OpenSearch();
+
+    [Fact]
+    public void The_password_label_is_the_providers_own()
+    {
+        Assert.Equal("Password or API key", ConnectionFieldModel.For(Es).PasswordLabel);
+        Assert.Equal("Password", ConnectionFieldModel.For(Os).PasswordLabel);
+        Assert.Equal("Password", ConnectionFieldModel.For(Pg).PasswordLabel);
+        Assert.Equal("Password", ConnectionFieldModel.For(Ms).PasswordLabel);
+    }
+
+    [Fact]
+    public void An_engine_with_no_password_field_or_a_blank_label_reads_password()
+    {
+        // DynamoDB declares no Password field at all; the label is still a word, never empty.
+        Assert.False(ConnectionFieldModel.For(Ddb).HasPasswordField);
+        Assert.Equal("Password", ConnectionFieldModel.For(Ddb).PasswordLabel);
+
+        var blank = new LabelProvider("  ");
+        Assert.True(ConnectionFieldModel.For(blank).HasPasswordField);
+        Assert.Equal("Password", ConnectionFieldModel.For(blank).PasswordLabel);
+        Assert.Equal("Secret", ConnectionFieldModel.For(new LabelProvider(" Secret ")).PasswordLabel);
+    }
+
+    [Fact]
+    public void Search_engines_declare_host_port_and_user_with_the_engines_own_extra_field()
+    {
+        Assert.Equal(
+            new[] { "Host", "Port", "User", SearchConnectionFactory.AuthenticationOption },
+            ConnectionFieldModel.For(Es).Fields.Select(f => f.Key));
+        Assert.Equal(
+            new[] { "Host", "Port", "User", SearchConnectionFactory.RegionOption },
+            ConnectionFieldModel.For(Os).Fields.Select(f => f.Key));
+        Assert.True(ConnectionFieldModel.For(Es).HasPasswordField);
+        Assert.True(ConnectionFieldModel.For(Os).HasPasswordField);
+    }
+
+    [Theory]
+    [InlineData("elasticsearch")]
+    [InlineData("opensearch")]
+    public void A_search_engine_maps_host_port_and_user_to_the_record_with_port_9200_by_default(string providerId)
+    {
+        IDbProvider provider = providerId == SearchProvider.ElasticsearchId ? Es : Os;
+        var model = ConnectionFieldModel.For(provider);
+
+        Assert.Equal("9200", model.Get("Port"));
+        model.Set("Host", " search.example.com ");
+        model.Set("User", "reader");
+
+        var info = model.Apply(Blank with { Port = 5432, Database = "left over" });
+
+        Assert.Equal(providerId, info.ProviderId);
+        Assert.Equal("search.example.com", info.Host);
+        Assert.Equal(9200, info.Port);
+        Assert.Equal("reader", info.User);
+        // No Database box on either engine, so the template's database stays as it was and no option is written.
+        Assert.Equal("left over", info.Database);
+        Assert.Empty(info.Options);
+
+        model.Set("Port", "");
+        Assert.Equal(9200, model.Apply(Blank).Port);
+        model.Set("Port", "9243");
+        Assert.Equal(9243, model.Apply(Blank).Port);
+    }
+
+    [Fact]
+    public void A_new_elasticsearch_connection_starts_on_user_and_password_and_writes_no_option_for_it()
+    {
+        var model = ConnectionFieldModel.For(Es);
+        var auth = Field(model, SearchConnectionFactory.AuthenticationOption);
+
+        Assert.Equal(SearchConnectionFactory.AuthenticationPassword, auth.Value);
+        Assert.Equal(
+            new[] { SearchConnectionFactory.AuthenticationPassword, SearchConnectionFactory.AuthenticationApiKey },
+            auth.Candidates);
+        // The default is omitted, like every option at its declared default; the factory reads an absent key as
+        // "User and password", so the two say the same thing.
+        Assert.False(model.Apply(Blank).Options.ContainsKey(SearchConnectionFactory.AuthenticationOption));
+        Assert.Empty(model.Validate(CredentialKind.StoredPassword));
+    }
+
+    [Fact]
+    public void The_elasticsearch_api_key_choice_round_trips_through_options()
+    {
+        var model = ConnectionFieldModel.For(Es);
+        model.Set(SearchConnectionFactory.AuthenticationOption, SearchConnectionFactory.AuthenticationApiKey);
+
+        var saved = model.Apply(Blank);
+        Assert.Equal(SearchConnectionFactory.AuthenticationApiKey,
+            saved.Options[SearchConnectionFactory.AuthenticationOption]);
+
+        var reopened = ConnectionFieldModel.For(Es, saved);
+        Assert.Equal(SearchConnectionFactory.AuthenticationApiKey,
+            reopened.Get(SearchConnectionFactory.AuthenticationOption));
+        Assert.Equal(saved.Options, reopened.Apply(saved).Options);
+
+        // Back to the default: the key leaves the bag rather than being written back.
+        reopened.Set(SearchConnectionFactory.AuthenticationOption, SearchConnectionFactory.AuthenticationPassword);
+        Assert.False(reopened.Apply(saved).Options.ContainsKey(SearchConnectionFactory.AuthenticationOption));
+    }
+
+    [Fact]
+    public void The_opensearch_region_round_trips_through_options_and_suggests_the_sdks_regions()
+    {
+        var model = ConnectionFieldModel.For(Os);
+        var region = Field(model, SearchConnectionFactory.RegionOption);
+        Assert.Equal("", region.Value);
+        Assert.Contains(region.Suggestions, s => s.Value == "eu-west-1");
+        Assert.False(model.Apply(Blank).Options.ContainsKey(SearchConnectionFactory.RegionOption));
+
+        model.Edit(SearchConnectionFactory.RegionOption, "eu-west-1");
+        var saved = model.Apply(Blank);
+        Assert.Equal("eu-west-1", saved.Options[SearchConnectionFactory.RegionOption]);
+
+        var reopened = ConnectionFieldModel.For(Os, saved);
+        Assert.Equal("eu-west-1", reopened.Get(SearchConnectionFactory.RegionOption));
+        Assert.Equal(saved.Options, reopened.Apply(saved).Options);
+    }
+
+    [Fact]
+    public void Switching_between_the_search_engines_parks_the_field_the_other_has_not()
+    {
+        var onEs = ConnectionFieldModel.For(Es);
+        onEs.Set("Host", "search.example.com");
+        onEs.Set(SearchConnectionFactory.AuthenticationOption, SearchConnectionFactory.AuthenticationApiKey);
+
+        var onOs = onEs.SwitchTo(Os);
+        Assert.Null(onOs.Get(SearchConnectionFactory.AuthenticationOption));
+        Assert.Equal("search.example.com", onOs.Get("Host"));
+
+        var back = onOs.SwitchTo(Es);
+        Assert.Equal(SearchConnectionFactory.AuthenticationApiKey, back.Get(SearchConnectionFactory.AuthenticationOption));
+    }
+
+    /// <summary>A provider whose only field is a password with the given label (§4.1 — hand-rolled).</summary>
+    private sealed class LabelProvider(string label) : IDbProvider
+    {
+        public string Id => "labeltest";
+        public string DisplayName => "Label Test";
+        public bool EnforcesReadOnlyOnServer => true;
+        public bool SupportsSessionTimeZone => false;
+        public bool SupportsIntegratedAuth => false;
+        public bool SupportsEntraToken => false;
+        public bool SupportsPasswordCredentials => true;
+        public bool SupportsAwsProfile => false;
+        public bool SupportsManualCommit => false;
+        public bool SupportsTlsModes => false;
+        public bool SupportsServerActivity => false;
+
+        public IServerActivity CreateServerActivity(IDbConnectionFactory factory)
+            => throw new NotSupportedException();
+        public DbErrorKind Classify(QueryError error) => DbErrorKind.Unknown;
+        public DbErrorKind ClassifyException(Exception exception) => DbErrorKind.Unknown;
+
+        public IReadOnlyList<ConnectionField> ConnectionFields { get; } =
+            [new ConnectionField("Password", label, ConnectionFieldKind.Password, Required: false)];
+        public IDbConnectionFactory CreateConnectionFactory(ConnectionInfo info, string? password)
+            => throw new NotSupportedException();
+        public IMetadataReader CreateMetadataReader(IDbConnectionFactory factory) => throw new NotSupportedException();
+        public IQueryExecutor CreateQueryExecutor(IDbConnectionFactory factory) => throw new NotSupportedException();
+        public ITransactionScope CreateTransactionScope(IDbConnectionFactory factory)
+            => throw new NotSupportedException();
     }
 }
