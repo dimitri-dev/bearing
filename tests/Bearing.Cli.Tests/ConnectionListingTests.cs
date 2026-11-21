@@ -2,6 +2,7 @@ using Bearing.Core.Data;
 using Bearing.Data;
 using Bearing.Data.DynamoDb;
 using Bearing.Data.Postgres;
+using Bearing.Data.Search;
 using Bearing.Cli.Tools;
 using Bearing.Persistence;
 using Bearing.Sessions;
@@ -145,6 +146,92 @@ public class ConnectionListingTests : IAsyncLifetime
         Assert.DoesNotContain("analytics-sso", json);
     }
 
+    /// <summary>
+    /// An exposed Elasticsearch or OpenSearch connection with a stored password or API key is listed under the
+    /// engine's own name, available — and, as for every engine, nothing about where the cluster is or who signs
+    /// in is disclosed.
+    /// </summary>
+    [Theory]
+    [InlineData(SearchProvider.ElasticsearchId, "Elasticsearch")]
+    [InlineData(SearchProvider.OpenSearchId, "OpenSearch")]
+    public async Task An_exposed_search_connection_is_listed_as_available_and_discloses_no_address(
+        string providerId, string engine)
+    {
+        var (host, _) = await HostAsync("Payments", Search("logs", providerId, exposed: true));
+
+        var response = await host.ListConnectionsAsync(CancellationToken.None);
+        var listed = Assert.Single(((ConnectionsResponse)response).Connections);
+        var json = CliRunner.Serialize(response);
+
+        Assert.Equal("logs", listed.Name);
+        Assert.Equal(engine, listed.Engine);
+        Assert.Equal("read-only", listed.Access);
+        Assert.True(listed.Available);
+        Assert.Null(listed.UnavailableReason);
+        Assert.DoesNotContain(PrivateHost, json);
+        Assert.DoesNotContain(PrivateUser, json);
+    }
+
+    /// <summary>An exposed OpenSearch connection signing with an AWS profile asks nobody anything, so it is
+    /// available like DynamoDB's; its profile and region are not disclosed.</summary>
+    [Fact]
+    public async Task An_exposed_opensearch_connection_on_an_aws_profile_is_available_and_discloses_no_profile()
+    {
+        var (host, _) = await HostAsync(
+            "Payments",
+            Search("logs-aws", SearchProvider.OpenSearchId, exposed: true) with
+            {
+                User = "analytics-sso",
+                CredentialKind = CredentialKind.AwsProfile,
+                Options = new Dictionary<string, string> { [SearchConnectionFactory.RegionOption] = "ap-southeast-2" },
+            });
+
+        var response = await host.ListConnectionsAsync(CancellationToken.None);
+        var listed = Assert.Single(((ConnectionsResponse)response).Connections);
+        var json = CliRunner.Serialize(response);
+
+        Assert.True(listed.Available);
+        Assert.DoesNotContain("analytics-sso", json);
+        Assert.DoesNotContain("ap-southeast-2", json);
+    }
+
+    /// <summary>Not exposed: named under <c>not_exposed</c> and never listed as a connection — and asking for it
+    /// by name says it is not exposed rather than missing, the same as on every engine.</summary>
+    [Theory]
+    [InlineData(SearchProvider.ElasticsearchId)]
+    [InlineData(SearchProvider.OpenSearchId)]
+    public async Task An_unexposed_search_connection_is_named_only_and_refused_as_unexposed(string providerId)
+    {
+        var (host, _) = await HostAsync("Payments", Search("logs", providerId, exposed: false));
+
+        var listed = await ListAsync(host);
+        var refused = await Assert.ThrowsAsync<CommandFailure>(
+            () => host.QueryAsync(new RunRequest("logs", "select * from orders"), CancellationToken.None));
+
+        Assert.Empty(listed.Connections);
+        Assert.Equal(["logs"], listed.NotExposed);
+        Assert.Equal(
+            "'logs' is not exposed to external tools. Its owner can allow it in Bearing's connection settings.",
+            refused.Message);
+    }
+
+    /// <summary>A search connection that asks for its password each session can only be opened in Bearing: it
+    /// is listed, unavailable, with the sentence <see cref="ExternalAccessPolicy.UnavailableReason"/> gives.</summary>
+    [Theory]
+    [InlineData(SearchProvider.ElasticsearchId)]
+    [InlineData(SearchProvider.OpenSearchId)]
+    public async Task An_exposed_search_connection_that_prompts_is_listed_as_unavailable_with_the_reason(string providerId)
+    {
+        var (host, _) = await HostAsync(
+            "Payments", Search("logs", providerId, exposed: true) with { CredentialKind = CredentialKind.Prompt });
+
+        var listed = Assert.Single((await ListAsync(host)).Connections);
+
+        Assert.False(listed.Available);
+        Assert.Equal("'logs' asks for its password each session, so it can only be opened in Bearing.",
+            listed.UnavailableReason);
+    }
+
     // ---- the shared project read, from both callers ------------------------------------------
 
     [Fact]
@@ -201,6 +288,18 @@ public class ConnectionListingTests : IAsyncLifetime
         Port = 5432,
         Database = "app",
         User = "app",
+        ExternalAccess = exposed ? ExternalAccess.ReadOnly : ExternalAccess.None,
+    };
+
+    private static ConnectionInfo Search(string name, string providerId, bool exposed) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = name,
+        ProviderId = providerId,
+        Host = PrivateHost,
+        Port = SearchConnectionFactory.DefaultPort,
+        Database = PrivateHost,
+        User = PrivateUser,
         ExternalAccess = exposed ? ExternalAccess.ReadOnly : ExternalAccess.None,
     };
 

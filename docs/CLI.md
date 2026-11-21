@@ -53,6 +53,9 @@ bearing [--project <dir>] [--table | --tsv] <command> [arguments]
                                      cannot read, and say so rather than sending the statement.
 ```
 
+Elasticsearch and OpenSearch are queried in their own languages rather than in SQL alone; see
+[Elasticsearch and OpenSearch connections](#elasticsearch-and-opensearch-connections).
+
 ```console
 $ bearing query reporting --file monthly.sql --out report.xlsx
 Wrote 12,480 rows in 3 result sets to /home/k/report.xlsx (xlsx).
@@ -246,6 +249,70 @@ resolves exactly as the app does: the AWS SDK reads the profile in-process, and 
 and the keychain holds none. A profile that needs
 signing in again fails with the profile's name and the `aws sso login --profile <name>` to run. And `tables` and
 `describe` list the region's tables and their declared key attributes, as they list tables elsewhere.
+
+## Elasticsearch and OpenSearch connections
+
+An Elasticsearch or OpenSearch connection can be exposed like any other, under the same forced settings:
+read-only on, manual commit off, and the 30 s timeout when the connection has none. Read-only is on the client
+alone — neither engine has a read-only session for Bearing to ask for — so, as on SQL Server, layer 1 above is
+the whole of it.
+
+**The language is read from each statement's first word.** Elasticsearch takes Elasticsearch SQL and ES|QL,
+OpenSearch takes OpenSearch SQL and PPL, and one `query` can mix them: each statement is judged on its own and
+comes back as its own result set. These are the reads an exposed connection runs:
+
+| Engine | SQL | Piped language |
+|---|---|---|
+| Elasticsearch | `SELECT`, `SHOW`, `DESCRIBE`, `DESC` | ES\|QL `FROM`, `ROW`, `TS` |
+| OpenSearch | `SELECT`, `SHOW`, `DESCRIBE` | PPL `SEARCH`, `SOURCE` (`source=logs`), `INDEX` |
+
+Any other first word is refused as "not a read", as on every engine — including OpenSearch's `DELETE`, which is
+refused as a write, and PPL's `rest`, refused before anything is sent:
+
+```console
+$ bearing query logs "rest get /_cluster/settings"
+logs: 'REST' is not a read. A connection exposed to external tools runs only DESCRIBE, INDEX, SEARCH, SELECT,
+SHOW, SOURCE — anything else is refused, including statements that would change how this session behaves.
+```
+
+**Some reads are refused by name**, on top of the allow-list:
+
+- an ES|QL statement using `COMPLETION` or `RERANK` (they call an inference endpoint, outside the data) or `INTO`
+  (it writes to an index);
+- a PPL statement using `ml`, `kmeans` or `ad` (they run a machine-learning job on the cluster) or `rest` (it
+  reads the cluster's management endpoints);
+- any statement naming an index that begins with `.` — `select * from ".security"`, `from .kibana | limit 1`,
+  `source=.opendistro_security` — which by convention is a hidden or system index. A dot inside a field path
+  (`select a.b from logs`) or a string (`where name = '.x'`) is not an index name, and runs.
+
+```console
+$ bearing query logs "from logs | completion prompt"
+logs: 'COMPLETION' is not available through an exposed connection: it sends rows to an inference endpoint,
+outside the data. This stops accidents and is not a boundary — a role without the privilege is.
+```
+
+These refusals are logged like any other and none reaches the server. **They stop accidents, not a determined
+caller.** The boundary is what the connection signs in as: a role or API key without the privilege on
+Elasticsearch, a role or an IAM policy without it on OpenSearch.
+
+**`query` returns the first page of a SQL result.** Elasticsearch SQL and OpenSearch SQL page with a cursor: a
+`query` without `--out` answers with the first page (at most `--max-rows`, default 200) and says
+`"truncated": true` when the server has more. **`--out` follows the cursor** to the end — or to `--max-rows`
+rows, when you pass one — before the file is complete, as for DynamoDB. OpenSearch pages only a plain `SELECT`;
+any other shape comes back whole, capped by the cluster's `plugins.query.size_limit`.
+
+**ES|QL and PPL answers come back whole.** The server has no paging for them, so a `query` gets every row the
+server returned — capped by the server (ES|QL adds `LIMIT 1000` when the statement has none). `--max-rows` still
+holds: a larger answer is trimmed to it and says `"truncated": true`, with or without `--out`.
+
+A warning the server attaches to an answer ("No limit defined, adding default limit of [1000]") is shown in
+Bearing's status line; the command does not repeat it.
+
+**`explain` is refused** on both engines — neither reports a plan this command can read.
+
+`tables` lists indices, data streams (as tables) and aliases (as views); `describe` lists an index's mapped fields
+with dotted names (`customer.name`). An index name with dashes or dots (`logs-2026.11.21`) is described by its
+whole name.
 
 ## Which project
 
