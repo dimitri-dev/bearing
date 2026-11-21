@@ -330,6 +330,14 @@ to finding a project (e.g. a corrupt `recent.json`) may end the command.
 - Responses are `ICliResponse` records serialised by **runtime type** (`CliRunner.Serialize`). `--table`
   switches on response type; `--tsv` is the same layout, COPY-text escaped (`\N` null), rows never trimmed.
 - `connections` names the project and unexposed connections (by name only).
+- A server's notice (`QueryResult.Notice`, Elasticsearch/OpenSearch only) is carried, never dropped (user decision
+  2026-11-21: a partial ES|QL answer is not `truncated`, so it is the only mark): `ResultSet.Notice` (`notice`, last
+  field, absent when blank), a `notice: …` line before the row summary under `--table`/`--tsv` (escaped under
+  `--tsv`), and `ExportResponse.Notices` (`notices`, distinct, in result then page order, continuation pages
+  included; absent when none). The exported file never carries it (§1.6). Additive only: a result without a notice
+  serialises as before (pinned by `CliTests.…_serialises_exactly_as_before`). It is exactly the server's warning
+  text the executor put in `Notice` (plus `PartialAnswerSentence`): the host adds no row, cursor or credential, and
+  it is not logged. Never describe it as free of data — the server words its warnings, not Bearing.
 - Export: unlimited by default, explicit `--max-rows` honoured. xlsx = sheet per result; CSV refuses
   multiple result sets.
 - `--timeout` may only lower, and must be > 0 (enforced in `WithTimeout`).

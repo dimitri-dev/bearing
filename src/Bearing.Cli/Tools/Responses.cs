@@ -114,6 +114,20 @@ public sealed record ResultSet(
 
     /// <summary>The <see cref="StoppedBy"/> value for a page the engine's request budget ended.</summary>
     public const string RequestBudget = "request_budget";
+
+    /// <summary>
+    /// What the server said about this result (<see cref="Bearing.Core.Data.QueryResult.Notice"/>, trimmed) — a
+    /// warning such as a default row limit it applied, or that it marked the answer partial. The server's text as
+    /// the executor carried it: this host adds no row and no paging token to it. Absent when the server said
+    /// nothing, which is every result of an engine that has no such channel.
+    /// <para>
+    /// Carried because a partial ES|QL answer (<c>is_partial</c>) is not <see cref="Truncated"/> — no ceiling cut
+    /// it, and there is no more to read — so without this a script would take it for the whole answer. Its own
+    /// field rather than <see cref="Message"/>, which beside <see cref="StoppedBy"/> is the engine's request-budget
+    /// sentence.
+    /// </para>
+    /// </summary>
+    public string? Notice { get; init; }
 }
 
 public sealed record ColumnHeader(string Name, string Type);
@@ -128,6 +142,14 @@ public sealed record ExportResponse(string Written, string Format, int Results, 
     /// Always present rather than omitted when false: a script that writes a file and does not check this
     /// would act on a truncated export, and the reassuring case is the one worth stating.</summary>
     public bool Truncated { get; init; }
+
+    /// <summary>
+    /// Every distinct server notice (<see cref="ResultSet.Notice"/>) of what was written, trimmed, in result order —
+    /// a page read by continuation included — or absent when there was none. A list rather than one per sheet
+    /// because this record states its facts for the whole file (<see cref="Truncated"/> too). The file itself does
+    /// not carry them: a CSV keeps its header on row 1 (§1.6).
+    /// </summary>
+    public IReadOnlyList<string>? Notices { get; init; }
 }
 
 // ---- plans -------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Bearing.Cli.Tools;
+using Bearing.Core.Data;
 using Bearing.Results;
 using Xunit;
 
@@ -628,6 +629,133 @@ public class CliTests
         Assert.Equal(2, results.Count);
         Assert.Equal("first", results[0]!["columns"]![0]!["name"]!.GetValue<string>());
         Assert.Equal("second", results[1]!["columns"]![0]!["name"]!.GetValue<string>());
+    }
+
+    /// <summary>
+    /// The server-notice field is additive: a result set that has none — every Postgres, SQL Server, MySQL and
+    /// DynamoDB result — serialises byte for byte as it did before the field existed, fields in the same order. The
+    /// second set is DynamoDB's request-budget page (message and <c>stopped_by</c>), the other optional pair.
+    /// </summary>
+    [Fact]
+    public void A_result_set_without_a_notice_serialises_exactly_as_before()
+    {
+        IReadOnlyList<ColumnDescriptor> columns = [new ColumnDescriptor("id", "integer", typeof(int))];
+        var plain = CellValue.SetOf(new QueryResult(
+            columns, [[1]], RowCount: 1, TimeSpan.FromMilliseconds(5), Message: null, Error: null, Truncated: true));
+        var budget = CellValue.SetOf(new QueryResult(
+            columns, [[2]], RowCount: 1, TimeSpan.FromMilliseconds(7), Message: "Stopped after 10 requests.", Error: null,
+            Truncated: true) { Continuation = "token" });
+
+        var json = CliRunner.Serialize(new QueryResponse([plain, budget])).ReplaceLineEndings("\n");
+
+        Assert.Equal(
+            """
+            {
+              "results": [
+                {
+                  "columns": [
+                    {
+                      "name": "id",
+                      "type": "integer"
+                    }
+                  ],
+                  "rows": [
+                    [
+                      1
+                    ]
+                  ],
+                  "row_count": 1,
+                  "truncated": true,
+                  "duration_ms": 5
+                },
+                {
+                  "columns": [
+                    {
+                      "name": "id",
+                      "type": "integer"
+                    }
+                  ],
+                  "rows": [
+                    [
+                      2
+                    ]
+                  ],
+                  "row_count": 1,
+                  "truncated": true,
+                  "duration_ms": 7,
+                  "message": "Stopped after 10 requests.",
+                  "stopped_by": "request_budget"
+                }
+              ]
+            }
+            """.ReplaceLineEndings("\n"),
+            json);
+    }
+
+    /// <summary>A notice comes last in its result set, after every field that was there before it.</summary>
+    [Fact]
+    public void A_result_sets_notice_is_its_last_field()
+    {
+        var set = CellValue.SetOf(new QueryResult(
+            [new ColumnDescriptor("id", "integer", typeof(int))], [[1]], RowCount: 1, TimeSpan.FromMilliseconds(5),
+            Message: null, Error: null, Truncated: false) { Notice = " partial \n" });
+
+        var fields = JsonNode.Parse(CliRunner.Serialize(new QueryResponse([set])))!["results"]![0]!.AsObject();
+
+        Assert.Equal(["columns", "rows", "row_count", "truncated", "duration_ms", "notice"], fields.Select(f => f.Key));
+        Assert.Equal("partial", fields["notice"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void An_export_without_a_notice_serialises_exactly_as_before()
+    {
+        var json = CliRunner.Serialize(new ExportResponse("/work/out.csv", "csv", Results: 1, Rows: 3))
+            .ReplaceLineEndings("\n");
+
+        Assert.Equal(
+            """
+            {
+              "written": "/work/out.csv",
+              "format": "csv",
+              "results": 1,
+              "rows": 3,
+              "truncated": false
+            }
+            """.ReplaceLineEndings("\n"),
+            json);
+    }
+
+    [Theory]
+    [InlineData("--table")]
+    [InlineData("--tsv")]
+    public async Task A_notice_is_printed_on_its_own_line_between_the_rows_and_the_summary(string format)
+    {
+        var host = new RecordingHost
+        {
+            Answer = new QueryResponse(
+            [
+                new ResultSet([new ColumnHeader("id", "long")], [new object?[] { 1L }], RowCount: 1, Truncated: false,
+                    DurationMs: 4) { Notice = "Elasticsearch marked this answer as partial (is_partial), so rows may be missing." },
+            ]),
+        };
+
+        var lines = Lines((await Cli.RunAsync(host, "query", "reporting", "from logs", format)).Out);
+
+        Assert.Equal("notice: Elasticsearch marked this answer as partial (is_partial), so rows may be missing.", lines[^2]);
+        Assert.Equal("(1 row in 4 ms)", lines[^1]);
+    }
+
+    [Fact]
+    public async Task An_export_prints_each_notice_on_its_own_line_after_what_it_wrote()
+    {
+        var host = new RecordingHost
+        {
+            Answer = new ExportResponse("/work/out.xlsx", "xlsx", Results: 2, Rows: 9) { Notices = ["first", "second"] },
+        };
+
+        var lines = Lines((await Cli.RunAsync(host, "query", "reporting", "from logs", "--table")).Out);
+
+        Assert.Equal(["Wrote 9 rows in 2 result sets to /work/out.xlsx (xlsx).", "notice: first", "notice: second"], lines);
     }
 
     // ---- tsv ----------------------------------------------------------------------------------

@@ -88,8 +88,10 @@ public sealed record QueryResult(
     /// OpenSearch executors only; every other engine leaves it null.
     /// <para>
     /// <b>Who reads it:</b> the App's status line for a run, which says every distinct notice of the run's results
-    /// in result order (<c>ResultSetBuilder.DescribeResults</c>). A continuation page's notice is not shown, and
-    /// the <c>bearing</c> command does not repeat notices in its output.
+    /// in result order (<c>ResultSetBuilder.DescribeResults</c>), where a continuation page's notice is not shown;
+    /// and the <c>bearing</c> command, which carries each result's notice, trimmed, as its <c>notice</c> field (a
+    /// <c>notice:</c> line under <c>--table</c>/<c>--tsv</c>) and lists the distinct notices of every page it
+    /// exported, continuation pages included, in the export response's <c>notices</c>.
     /// </para>
     /// <para>
     /// A member of its own because <see cref="Message"/> cannot carry it: <c>Message</c> is shown only for a

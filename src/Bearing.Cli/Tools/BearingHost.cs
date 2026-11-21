@@ -121,6 +121,7 @@ public sealed class BearingHost(
         }
 
         IReadOnlyList<QueryResult> results;
+        var notices = new List<string>();
         var wall = Stopwatch.StartNew();
         try
         {
@@ -132,7 +133,7 @@ public sealed class BearingHost(
             // is the whole answer (unlimited unless capped, §1.11e), so a result that can be continued is
             // followed to its end — or to --max-rows — before anything is written.
             if (request.OutPath is not null)
-                results = await FollowContinuationsAsync(lease.Session.Executor, results, Rows(request), ct)
+                results = await FollowContinuationsAsync(lease.Session.Executor, results, Rows(request), notices, ct)
                     .ConfigureAwait(false);
 
             wall.Stop();
@@ -148,7 +149,8 @@ public sealed class BearingHost(
             throw new CommandFailure($"{info.Name}: {error.Message}");
 
         if (request.OutPath is { } path)
-            return Export(results, path, format!.Value, info.Name, ContinuesByToken(traits) ? EmptyRead(results) : null);
+            return Export(
+                results, path, format!.Value, info.Name, ContinuesByToken(traits) ? EmptyRead(results) : null, notices);
 
         // One shape whatever the SQL was. A single statement is the overwhelming case, but a result that
         // is sometimes an object and sometimes a list is a shape a consumer has to branch on, and the
@@ -393,8 +395,15 @@ public sealed class BearingHost(
     /// </summary>
     /// <param name="emptyRead">What a read that came back with no shape said for itself, on an engine whose reads
     /// can (<see cref="EmptyRead"/>) — carried into the refusal so it reads the same as the streamed path's.</param>
+    /// <param name="notices">The server's notices on every page of the grids written, in result order
+    /// (<see cref="FollowContinuationsAsync"/> gathers them), for <see cref="ExportResponse.Notices"/>.</param>
     private static ExportResponse Export(
-        IReadOnlyList<QueryResult> results, string path, ExportFormat format, string connection, string? emptyRead)
+        IReadOnlyList<QueryResult> results,
+        string path,
+        ExportFormat format,
+        string connection,
+        string? emptyRead,
+        IReadOnlyList<string> notices)
     {
         var grids = results.Where(r => r.Columns.Count > 0).ToList();
         if (grids.Count == 0)
@@ -428,7 +437,24 @@ public sealed class BearingHost(
             Path.GetFullPath(path), ExportFormats.Name(format), grids.Count, grids.Sum(g => (long)g.Rows.Count))
         {
             Truncated = grids.Any(g => g.Truncated),
+            Notices = DistinctNotices(notices),
         };
+    }
+
+    /// <summary><paramref name="notices"/> without repeats, in the order they arrived — or null when there are
+    /// none, so <see cref="ExportResponse.Notices"/> is absent rather than an empty list and an export from an engine
+    /// that never sends one serialises exactly as before.</summary>
+    private static IReadOnlyList<string>? DistinctNotices(IEnumerable<string> notices)
+    {
+        var distinct = notices.Distinct(StringComparer.Ordinal).ToList();
+
+        return distinct.Count == 0 ? null : distinct;
+    }
+
+    /// <summary>Adds <paramref name="page"/>'s server notice (<see cref="CellValue.NoticeOf"/>), when it has one.</summary>
+    private static void Note(ICollection<string> notices, QueryResult page)
+    {
+        if (CellValue.NoticeOf(page) is { } notice) notices.Add(notice);
     }
 
     /// <summary>
@@ -495,6 +521,7 @@ public sealed class BearingHost(
             Path.GetFullPath(path), ExportFormats.Name(ExportFormat.Csv), Results: 1, written.Rows)
         {
             Truncated = written.Truncated,
+            Notices = DistinctNotices(first.Notices),
         };
     }
 
@@ -550,15 +577,24 @@ public sealed class BearingHost(
     /// A continuation call that fails ends the batch with that failure in place, so the caller logs it and writes
     /// nothing: a file holding the pages before the error would be a plausible-looking fraction of the answer.
     /// </para>
+    /// <para>
+    /// <paramref name="notices"/> receives the server's notice of every page of every grid (a result with columns,
+    /// the only kind an export writes), in result order and page order — a later page's included, which the merged
+    /// result cannot carry: its <see cref="QueryResult.Notice"/> stays the first page's.
+    /// </para>
     /// </summary>
     private static async Task<IReadOnlyList<QueryResult>> FollowContinuationsAsync(
-        IQueryExecutor executor, IReadOnlyList<QueryResult> results, int? maxRows, CancellationToken ct)
+        IQueryExecutor executor,
+        IReadOnlyList<QueryResult> results,
+        int? maxRows,
+        ICollection<string> notices,
+        CancellationToken ct)
     {
-        if (!results.Any(r => r.Continuation is not null)) return results;
-
         var followed = new List<QueryResult>(results.Count);
         foreach (var result in results)
         {
+            if (result.Columns.Count > 0) Note(notices, result);
+
             if (result.Continuation is not { } token || !result.Success)
             {
                 followed.Add(result);
@@ -580,6 +616,7 @@ public sealed class BearingHost(
                     return followed;
                 }
 
+                Note(notices, page);
                 rows.AddRange(page.Rows);
                 duration += page.Duration;
                 next = page.Continuation;
@@ -644,6 +681,8 @@ public sealed class BearingHost(
         {
             if (page.Error is { } error) throw new InvalidOperationException(error.Message);
 
+            Note(first.Notices, page);
+
             // A page can overshoot the cap (a filtered DynamoDB read): the rows past it are dropped and the tail
             // says the read was cut, as when the cap stops it with a token in hand.
             var rows = page.Rows;
@@ -664,11 +703,16 @@ public sealed class BearingHost(
         }
     }
 
-    /// <summary>What <see cref="ContinuedRowsAsync"/> learned about the read's first page that the row stream
-    /// cannot carry. Written before the first batch is yielded, read after the stream ends.</summary>
+    /// <summary>What <see cref="ContinuedRowsAsync"/> learned about the read that the row stream cannot carry. Written
+    /// as pages arrive (the first before the first batch is yielded), read after the stream ends.</summary>
     private sealed class FirstPage
     {
         public string? EmptyRead { get; set; }
+
+        /// <summary>The server's notice of each page read, in page order (repeats kept; the response drops them).
+        /// Empty on a stream that is not read by continuation — <see cref="IQueryExecutor.StreamRowsAsync"/>'s
+        /// batches carry none, and no engine streamed that way sets a notice.</summary>
+        public List<string> Notices { get; } = [];
     }
 
     /// <summary>The sentence a successful read with no shape gave for itself (DynamoDB: "The SELECT returned no

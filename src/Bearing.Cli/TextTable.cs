@@ -64,6 +64,7 @@ public static class TextTable
                     $"Wrote {export.Rows:N0} row{(export.Rows == 1 ? "" : "s")} "
                     + $"in {export.Results} result set{(export.Results == 1 ? "" : "s")} "
                     + $"to {export.Written} ({export.Format}).");
+                foreach (var notice in export.Notices ?? []) output.AppendLine(NoticeLine(notice, tabs));
                 break;
 
             case PlanResponse plan:
@@ -105,6 +106,10 @@ public static class TextTable
 
         if (set.Message is { Length: > 0 } message) output.AppendLine(message);
 
+        // Beside the message, under the rows: what the server said about them. Said because a partial answer is
+        // not cut short — the summary below cannot say it — and reading it as the whole answer is the mistake.
+        if (set.Notice is { Length: > 0 } notice) output.AppendLine(NoticeLine(notice, tabs));
+
         // "cut short" rather than "more rows exist": the read stopped at the ceiling, and saying so is what
         // stops someone reading a partial answer as the whole one. A page the engine's request budget ended is
         // as partial, but no row limit was reached — saying one was would send the reader to raise --max-rows,
@@ -115,6 +120,10 @@ public static class TextTable
         output.AppendLine(
             $"({set.RowCount} row{(set.RowCount == 1 ? "" : "s")} in {set.DurationMs} ms{truncated})");
     }
+
+    /// <summary>A server notice as one remark line, labelled the way the JSON names the field. Under <c>--tsv</c> it
+    /// is escaped like a cell (<see cref="Escape"/>), so it stays on its one line whatever the server sent.</summary>
+    private static string NoticeLine(string notice, bool tabs) => $"notice: {(tabs ? Escape(notice) : notice)}";
 
     private static void AppendPlan(StringBuilder output, PlanResponse plan)
     {

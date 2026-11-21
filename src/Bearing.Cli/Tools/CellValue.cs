@@ -104,8 +104,17 @@ public static class CellValue
             // It is the only answer such a statement has, so dropping it would report success with nothing.
             Message = string.IsNullOrWhiteSpace(result.Message) ? null : result.Message,
             StoppedBy = StoppedByBudget(result) ? ResultSet.RequestBudget : null,
+            // What the server said about the rows (a partial answer, a default limit it applied). Not Truncated:
+            // a partial ES|QL answer has nothing more to read, so this is the only mark it carries here.
+            Notice = NoticeOf(result),
         };
     }
+
+    /// <summary>The server's notice on <paramref name="result"/> (<see cref="QueryResult.Notice"/>), trimmed, or
+    /// null when it is null or blank — so the field is absent rather than empty, and a result of an engine that never
+    /// sets one serialises exactly as before.</summary>
+    internal static string? NoticeOf(QueryResult result)
+        => string.IsNullOrWhiteSpace(result.Notice) ? null : result.Notice.Trim();
 
     /// <summary>
     /// Whether the engine's request budget, not the row ceiling, ended this page: a successful read that can still

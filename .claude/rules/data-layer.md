@@ -104,7 +104,9 @@ Measured against Elasticsearch 9.5.6 and OpenSearch 3.10.0 containers (`SearchLi
   (`BearingHost.Capped`). Count is never offered.
 - **`QueryResult.Notice`, not `Message`:** the server's warnings (headers and body, each cut at 500 chars) go to
   `Notice`; the App's status line appends every distinct notice of the run, in result order (a continuation
-  page's is not shown; the `bearing` command repeats none). `Message` stays null on every result with columns — on a
+  page's is not shown). The `bearing` command carries each result's as `notice` (trimmed, absent when blank —
+  `CellValue.NoticeOf`) and an export's distinct page notices, continuation pages included, as `notices` (user
+  decision 2026-11-21, §1.11e). `Message` stays null on every result with columns — on a
   continuing result both hosts read it as the request-budget note. An ES|QL answer with `is_partial: true` leads
   its `Notice` with `PartialAnswerSentence`; SQL and PPL answers are not read for `is_partial`. An error leads
   with its language (`ES|QL: …`), its `line:col` is the position, and the server's root cause is appended when it

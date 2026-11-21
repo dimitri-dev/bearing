@@ -305,8 +305,36 @@ any other shape comes back whole, capped by the cluster's `plugins.query.size_li
 server returned — capped by the server (ES|QL adds `LIMIT 1000` when the statement has none). `--max-rows` still
 holds: a larger answer is trimmed to it and says `"truncated": true`, with or without `--out`.
 
-A warning the server attaches to an answer ("No limit defined, adding default limit of [1000]") is shown in
-Bearing's status line; the command does not repeat it.
+**A warning the server attaches to an answer is carried as `notice`** ("No limit defined, adding default limit
+of [1000]"), the server's text as Bearing received it. In the JSON it is a string field of that result set,
+after the others, and absent when the server said nothing — every other engine's results never have it. In a
+script with several statements each result carries its own. Under `--table` and `--tsv` it is one line,
+`notice: …`, between the rows and the `(N rows in … ms)` line (`--tsv` escapes it like a cell, so it stays one
+line; the data rows are unchanged). An `--out` export's response lists the distinct notices of every page it
+wrote, in result order and continuation pages included, as `notices` (one `notice: …` line each after "Wrote …"
+under `--table`); the file itself carries only the rows.
+
+**A partial ES|QL answer says so there.** When Elasticsearch could not read a shard it still answers, marked
+`is_partial`, and rows may be missing. That answer is not `"truncated"` — no cap cut it and there is nothing more
+to read — so `notice` is what marks it:
+
+```json
+{
+  "results": [
+    {
+      "columns": [ { "name": "id", "type": "long" } ],
+      "rows": [ [ 1 ], [ 2 ], [ 3 ] ],
+      "row_count": 3,
+      "truncated": false,
+      "duration_ms": 41,
+      "notice": "Elasticsearch marked this answer as partial (is_partial), so rows may be missing."
+    }
+  ]
+}
+```
+
+An OpenSearch answer cut by the cluster's `plugins.query.size_limit` carries no mark, in Bearing or through the
+command: OpenSearch sends none (measured on 3.10).
 
 **`explain` is refused** on both engines — neither reports a plan this command can read.
 

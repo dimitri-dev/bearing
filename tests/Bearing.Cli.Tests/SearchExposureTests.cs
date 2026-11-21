@@ -437,20 +437,211 @@ public class SearchExposureTests : IAsyncLifetime
         Assert.Equal(0, Executor.Continuations);
     }
 
-    /// <summary>The App's status line repeats a server warning (<see cref="QueryResult.Notice"/>); the command
-    /// does not — neither as the result's message nor anywhere in what it prints.</summary>
+    // ---- server notices (user decision 2026-11-21: the command carries them) --------------------------
+
+    /// <summary>A partial ES|QL answer is not truncated — there is nothing more to read — so its notice is the only
+    /// thing that tells a script the rows may be incomplete. It reaches the JSON as <c>notice</c>, trimmed, with the
+    /// server's text exactly, and never as the result's message.</summary>
+    [Theory]
+    [InlineData(Es, "from orders", FakeSearchExecutor.PartialAnswerNotice)]
+    [InlineData(Es, "from orders", FakeSearchExecutor.DefaultLimitNotice)]
+    [InlineData(Os, "source=orders", FakeSearchExecutor.PartialAnswerNotice)]
+    public async Task A_server_notice_is_carried_on_its_result_set(string engine, string sql, string notice)
+    {
+        var host = await HostAsync(engine);
+        Executor.Notice = $"  {notice} ";
+
+        var response = (QueryResponse)await host.QueryAsync(new RunRequest(NameOf(engine), sql), CancellationToken.None);
+
+        var set = Assert.Single(response.Results);
+        Assert.Equal(notice, set.Notice);
+        Assert.Null(set.Message);
+        Assert.False(set.Truncated);
+        var json = System.Text.Json.Nodes.JsonNode.Parse(CliRunner.Serialize(response))!;
+        Assert.Equal(notice, json["results"]![0]!["notice"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(Es, "from orders")]
+    [InlineData(Os, "select * from orders")]
+    public async Task A_result_the_server_said_nothing_about_has_no_notice_field(string engine, string sql)
+    {
+        var host = await HostAsync(engine);
+
+        var response = (QueryResponse)await host.QueryAsync(new RunRequest(NameOf(engine), sql), CancellationToken.None);
+
+        Assert.Null(Assert.Single(response.Results).Notice);
+        Assert.DoesNotContain("notice", CliRunner.Serialize(response));
+        Assert.DoesNotContain("notice", TextTable.Render(response));
+        Assert.DoesNotContain("notice", TextTable.Render(response, tabs: true));
+    }
+
+    /// <summary><c>--table</c> says the notice on one line under the rows, before the summary line — where the
+    /// result's message goes; <c>--tsv</c> puts it in the same place, and its data rows are untouched.</summary>
     [Fact]
-    public async Task A_server_notice_is_not_repeated_by_the_command()
+    public async Task Table_and_tsv_say_the_notice_on_one_line_under_the_rows()
     {
         var host = await HostAsync(Es);
-        Executor.Notice = FakeSearchExecutor.DefaultLimitNotice;
+        Executor.Notice = FakeSearchExecutor.PartialAnswerNotice;
 
         var response = (QueryResponse)await host.QueryAsync(
             new RunRequest(NameOf(Es), "from orders"), CancellationToken.None);
 
-        Assert.Null(Assert.Single(response.Results).Message);
-        Assert.DoesNotContain("No limit defined", CliRunner.Serialize(response));
-        Assert.DoesNotContain("No limit defined", TextTable.Render(response));
+        var table = Lines(TextTable.Render(response));
+        Assert.Equal($"notice: {FakeSearchExecutor.PartialAnswerNotice}", table[^2]);
+        Assert.Equal("(8 rows in 1 ms)", table[^1]);
+        Assert.Equal(2 + FakeSearchExecutor.WholeRows + 2, table.Count);   // header, rule, rows, notice, summary
+
+        var tsv = Lines(TextTable.Render(response, tabs: true));
+        Assert.Equal("id\tcustomer.name", tsv[0]);
+        Assert.Equal(
+            Enumerable.Range(0, FakeSearchExecutor.WholeRows).Select(i => $"{i}\twhole-{i:D3}"),
+            tsv.Skip(1).Take(FakeSearchExecutor.WholeRows));
+        Assert.Equal($"notice: {FakeSearchExecutor.PartialAnswerNotice}", tsv[^2]);
+        Assert.Equal("(8 rows in 1 ms)", tsv[^1]);
+    }
+
+    [Fact]
+    public async Task Tsv_escapes_a_notice_so_it_stays_on_one_line()
+    {
+        var host = await HostAsync(Es);
+        Executor.Notice = "first\nsecond\tthird";
+
+        var response = (QueryResponse)await host.QueryAsync(
+            new RunRequest(NameOf(Es), "from orders"), CancellationToken.None);
+
+        Assert.Equal(@"notice: first\nsecond\tthird", Lines(TextTable.Render(response, tabs: true))[^2]);
+    }
+
+    /// <summary>Each statement of a run carries its own result's notice, and a result without one carries none.</summary>
+    [Fact]
+    public async Task A_two_statement_run_carries_each_results_own_notice()
+    {
+        var host = await HostAsync(Es);
+        Executor.FirstPageNotice = FakeSearchExecutor.DefaultLimitNotice;
+        Executor.Notice = FakeSearchExecutor.PartialAnswerNotice;
+
+        var response = (QueryResponse)await host.QueryAsync(
+            new RunRequest(NameOf(Es), "select * from orders; from orders | limit 5; select 1"), CancellationToken.None);
+
+        Assert.Equal(
+            [FakeSearchExecutor.DefaultLimitNotice, FakeSearchExecutor.PartialAnswerNotice, FakeSearchExecutor.DefaultLimitNotice],
+            response.Results.Select(r => r.Notice));
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(CliRunner.Serialize(response))!["results"]!.AsArray();
+        Assert.Equal(FakeSearchExecutor.DefaultLimitNotice, json[0]!["notice"]!.GetValue<string>());
+        Assert.Equal(FakeSearchExecutor.PartialAnswerNotice, json[1]!["notice"]!.GetValue<string>());
+
+        var table = TextTable.Render(response);
+        Assert.Contains($"notice: {FakeSearchExecutor.DefaultLimitNotice}", table);
+        Assert.Contains($"notice: {FakeSearchExecutor.PartialAnswerNotice}", table);
+    }
+
+    [Fact]
+    public async Task In_a_run_only_the_result_with_a_notice_carries_one()
+    {
+        var host = await HostAsync(Es);
+        Executor.Notice = FakeSearchExecutor.PartialAnswerNotice;
+
+        var response = (QueryResponse)await host.QueryAsync(
+            new RunRequest(NameOf(Es), "select * from orders; from orders | limit 5"), CancellationToken.None);
+
+        Assert.Equal([null, FakeSearchExecutor.PartialAnswerNotice], response.Results.Select(r => r.Notice));
+        var json = System.Text.Json.Nodes.JsonNode.Parse(CliRunner.Serialize(response))!["results"]!.AsArray();
+        Assert.False(json[0]!.AsObject().ContainsKey("notice"));
+    }
+
+    /// <summary>An export's response lists the distinct notices of every page it wrote — the first page's, then a
+    /// later page's, repeats dropped — and the file itself is the rows alone (§1.6).</summary>
+    [Theory]
+    [InlineData(Es, "orders.csv")]
+    [InlineData(Es, "orders.xlsx")]
+    [InlineData(Os, "orders.csv")]
+    [InlineData(Os, "orders.xlsx")]
+    public async Task An_export_response_lists_the_notices_of_every_page_it_wrote(string engine, string file)
+    {
+        const string later = "a later page's warning";
+        var host = await HostAsync(engine);
+        Executor.FirstPageNotice = FakeSearchExecutor.DefaultLimitNotice;
+        Executor.ContinuationNotice = later;   // on both continuation pages
+        var path = Path.Combine(_root, file);
+
+        var export = (ExportResponse)await host.QueryAsync(
+            new RunRequest(NameOf(engine), "select * from orders") { OutPath = path }, CancellationToken.None);
+
+        Assert.Equal([FakeSearchExecutor.DefaultLimitNotice, later], export.Notices);
+        Assert.Equal(FakeSearchExecutor.Items, export.Rows);
+        Assert.Equal(2, Executor.Continuations);
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(CliRunner.Serialize(export))!;
+        Assert.Equal(
+            [FakeSearchExecutor.DefaultLimitNotice, later],
+            json["notices"]!.AsArray().Select(n => n!.GetValue<string>()));
+
+        var table = Lines(TextTable.Render(export));
+        Assert.StartsWith("Wrote 25 rows in 1 result set to ", table[0]);
+        Assert.Equal([$"notice: {FakeSearchExecutor.DefaultLimitNotice}", $"notice: {later}"], table.Skip(1));
+
+        if (file.EndsWith(".csv", StringComparison.Ordinal))
+        {
+            var lines = File.ReadAllLines(path);
+            Assert.Equal(FakeSearchExecutor.Items + 1, lines.Length);
+            Assert.Equal("id,customer.name", lines[0]);
+            Assert.DoesNotContain(lines, l => l.Contains("limit", StringComparison.Ordinal) || l.Contains("warning"));
+        }
+    }
+
+    /// <summary>A piped answer arrives whole on the first page: its notice is the export's, on the streamed CSV
+    /// path and the workbook path alike.</summary>
+    [Theory]
+    [InlineData(Es, "from orders | limit 50", "whole.csv")]
+    [InlineData(Es, "from orders | limit 50", "whole.xlsx")]
+    [InlineData(Os, "source=orders | head 50", "whole.csv")]
+    public async Task An_export_of_a_partial_piped_answer_says_so_in_its_response(string engine, string sql, string file)
+    {
+        var host = await HostAsync(engine);
+        Executor.Notice = FakeSearchExecutor.PartialAnswerNotice;
+        var path = Path.Combine(_root, file);
+
+        var export = (ExportResponse)await host.QueryAsync(
+            new RunRequest(NameOf(engine), sql) { OutPath = path }, CancellationToken.None);
+
+        Assert.Equal([FakeSearchExecutor.PartialAnswerNotice], export.Notices);
+        Assert.False(export.Truncated);
+        Assert.Equal(FakeSearchExecutor.WholeRows, export.Rows);
+    }
+
+    /// <summary>A two-statement workbook lists both results' notices, in result order.</summary>
+    [Fact]
+    public async Task A_workbook_of_two_results_lists_each_results_notice_in_order()
+    {
+        var host = await HostAsync(Es);
+        Executor.Notice = FakeSearchExecutor.PartialAnswerNotice;
+        Executor.FirstPageNotice = FakeSearchExecutor.DefaultLimitNotice;
+        var path = Path.Combine(_root, "two.xlsx");
+
+        var export = (ExportResponse)await host.QueryAsync(
+            new RunRequest(NameOf(Es), "from orders | limit 5; select * from orders") { OutPath = path },
+            CancellationToken.None);
+
+        Assert.Equal(2, export.Results);
+        Assert.Equal([FakeSearchExecutor.PartialAnswerNotice, FakeSearchExecutor.DefaultLimitNotice], export.Notices);
+    }
+
+    [Theory]
+    [InlineData(Es, "orders.csv")]
+    [InlineData(Os, "orders.xlsx")]
+    public async Task An_export_with_no_notice_has_no_notices_field(string engine, string file)
+    {
+        var host = await HostAsync(engine);
+
+        var export = (ExportResponse)await host.QueryAsync(
+            new RunRequest(NameOf(engine), "select * from orders") { OutPath = Path.Combine(_root, file) },
+            CancellationToken.None);
+
+        Assert.Null(export.Notices);
+        Assert.DoesNotContain("notice", CliRunner.Serialize(export));
+        Assert.Single(Lines(TextTable.Render(export)));
     }
 
     // ---- the forced settings ------------------------------------------------------------------------
@@ -490,6 +681,10 @@ public class SearchExposureTests : IAsyncLifetime
     // ---- fixtures -----------------------------------------------------------------------------------
 
     private static string NameOf(string engine) => $"agent-{engine}";
+
+    /// <summary>The rendered lines, without the empty one after the final line break.</summary>
+    private static List<string> Lines(string output)
+        => (output.EndsWith('\n') ? output[..^1] : output).Split('\n').Select(l => l.TrimEnd('\r')).ToList();
 
     /// <summary>Run <paramref name="sql"/>, expect a refusal, and assert it was logged as one and nothing was
     /// sent. Returns the refusal's sentence.</summary>
@@ -685,6 +880,11 @@ internal sealed class FakeSearchExecutor(ISqlDialect dialect) : IQueryExecutor
     /// <summary>The warning Elasticsearch sends with an ES|QL statement that has no <c>LIMIT</c>.</summary>
     public const string DefaultLimitNotice = "No limit defined, adding default limit of [1000]";
 
+    /// <summary>The executor's lead sentence for an ES|QL answer marked <c>is_partial</c>
+    /// (<c>SearchProtocol.PartialAnswerSentence</c>, internal to <c>Bearing.Data</c>, so spelled out here).</summary>
+    public const string PartialAnswerNotice =
+        "Elasticsearch marked this answer as partial (is_partial), so rows may be missing.";
+
     private static readonly IReadOnlyList<ColumnDescriptor> Columns =
     [
         new("id", "long", typeof(long)),
@@ -709,6 +909,12 @@ internal sealed class FakeSearchExecutor(ISqlDialect dialect) : IQueryExecutor
     /// <summary>Set to have every piped answer carry this server warning as its <see cref="QueryResult.Notice"/>.</summary>
     public string? Notice { get; set; }
 
+    /// <summary>Set to have a SQL statement's first page carry this as its <see cref="QueryResult.Notice"/>.</summary>
+    public string? FirstPageNotice { get; set; }
+
+    /// <summary>Set to have every continuation page carry this as its <see cref="QueryResult.Notice"/>.</summary>
+    public string? ContinuationNotice { get; set; }
+
     public Task<IReadOnlyList<QueryResult>> ExecuteAsync(string sql, QueryOptions options, CancellationToken ct)
     {
         Executes++;
@@ -722,7 +928,9 @@ internal sealed class FakeSearchExecutor(ISqlDialect dialect) : IQueryExecutor
             var text = span.Text.Trim().TrimEnd(';').Trim();
             if (text.Length > 0)
             {
-                results.Add(IsPiped(text) ? Whole(index) : Page(0, options.MaxRows ?? PageSize, index));
+                results.Add(IsPiped(text)
+                    ? Whole(index)
+                    : Page(0, options.MaxRows ?? PageSize, index) with { Notice = FirstPageNotice });
             }
 
             index++;
@@ -736,7 +944,10 @@ internal sealed class FakeSearchExecutor(ISqlDialect dialect) : IQueryExecutor
         Continuations++;
         ContinuationAsks.Add(maxRows);
 
-        return Task.FromResult(Page(int.Parse(continuation["cursor:".Length..]), maxRows, statementIndex: 0));
+        return Task.FromResult(Page(int.Parse(continuation["cursor:".Length..]), maxRows, statementIndex: 0) with
+        {
+            Notice = ContinuationNotice,
+        });
     }
 
     public IAsyncEnumerable<RowBatch> StreamRowsAsync(string sql, QueryOptions options, CancellationToken ct)
