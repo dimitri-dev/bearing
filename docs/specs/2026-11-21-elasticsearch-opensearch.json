@@ -1,0 +1,1909 @@
+{
+  "slug": "elasticsearch-opensearch",
+  "date": "2026-11-21",
+  "scope": "new-feature",
+  "change_manifest": [
+    {
+      "path": "src/Bearing.Core/Data/TunnelEndpoint.cs",
+      "action": "create",
+      "purpose": "the tunnel's loopback end handed to a provider",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Core/Data/IDbProvider.cs",
+      "action": "modify",
+      "purpose": "three-argument CreateConnectionFactory default member",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Core/Data/QueryResult.cs",
+      "action": "modify",
+      "purpose": "Notice: what the server said about a result that has rows",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Sql/SearchScan.cs",
+      "action": "create",
+      "purpose": "scanner for ES SQL, ES|QL, OpenSearch SQL and PPL: split, language, first word, pipe segments",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Sql/ElasticsearchDialect.cs",
+      "action": "create",
+      "purpose": "Elasticsearch dialect (SQL + ES|QL)",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Sql/OpenSearchDialect.cs",
+      "action": "create",
+      "purpose": "OpenSearch dialect (SQL + PPL)",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Sql/ISqlDialect.cs",
+      "action": "modify",
+      "purpose": "CompletesAt default member",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Sql/CompletionEngine.cs",
+      "action": "modify",
+      "purpose": "ask the dialect's CompletesAt before parsing",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchProvider.cs",
+      "action": "create",
+      "purpose": "one provider class, two engine ids; fields and flags",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/ISearchApi.cs",
+      "action": "create",
+      "purpose": "HTTP seam and its HttpClient implementation",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchConnectionFactory.cs",
+      "action": "create",
+      "purpose": "scheme/TLS per mode, auth, tunnel dialling, connection test",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchErrors.cs",
+      "action": "create",
+      "purpose": "classification, sentences, scrubbing",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/AwsSigV4.cs",
+      "action": "create",
+      "purpose": "SigV4 signer for OpenSearch requests",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchBatch.cs",
+      "action": "create",
+      "purpose": "Data's own statement split and language decision",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchProtocol.cs",
+      "action": "create",
+      "purpose": "request/response shapes of the four endpoints",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchValues.cs",
+      "action": "create",
+      "purpose": "declared type to column, JSON value to cell",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchContinuation.cs",
+      "action": "create",
+      "purpose": "opaque continuation token",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchQueryExecutor.cs",
+      "action": "create",
+      "purpose": "executor: batch loop, pages, continuation, timeout",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchMappings.cs",
+      "action": "create",
+      "purpose": "mapping flattening to dotted columns",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Search/SearchMetadataReader.cs",
+      "action": "create",
+      "purpose": "indices, aliases, data streams, sizes",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Aws/AwsProfileCredentials.cs",
+      "action": "create",
+      "purpose": "profile to SDK credentials, shared by DynamoDB and OpenSearch",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/DynamoDb/DynamoDbConnectionFactory.cs",
+      "action": "modify",
+      "purpose": "use the shared credential lookup",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/ProviderRegistry.cs",
+      "action": "modify",
+      "purpose": "register elasticsearch and opensearch",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Data/Bearing.Data.csproj",
+      "action": "modify",
+      "purpose": "header comment names the Search folder",
+      "mechanical": true
+    },
+    {
+      "path": "src/Bearing.Sessions/ProviderTraits.cs",
+      "action": "modify",
+      "purpose": "Elasticsearch and OpenSearch arms; AwsProfileNote",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Sessions/ConnectionFactoryBuilder.cs",
+      "action": "modify",
+      "purpose": "hand the provider the real host plus the tunnel's loopback end",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.App/Connections/ConnectionFieldModel.cs",
+      "action": "modify",
+      "purpose": "PasswordLabel from the provider's Password field",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.App/Views/ConnectionDialog.axaml.cs",
+      "action": "modify",
+      "purpose": "password label follows the model; AWS-profile hint text from the traits",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.App/Views/ConnectionDialog.axaml",
+      "action": "modify",
+      "purpose": "AWS-profile hint no longer carries one fixed sentence",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.App/Results/ResultSetBuilder.cs",
+      "action": "modify",
+      "purpose": "status line appends a result's Notice",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/Bearing.Data.Tests.csproj",
+      "action": "modify",
+      "purpose": "link tests/Shared/SearchTestServer.cs",
+      "mechanical": true
+    },
+    {
+      "path": "build/test-db-search.sh",
+      "action": "create",
+      "purpose": "start the Elasticsearch and OpenSearch test containers",
+      "mechanical": false
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "action": "modify",
+      "purpose": "provision the search containers on the database leg",
+      "mechanical": false
+    },
+    {
+      "path": "README.md",
+      "action": "modify",
+      "purpose": "name the two engines",
+      "mechanical": true
+    },
+    {
+      "path": "CLAUDE.md",
+      "action": "modify",
+      "purpose": "project profile names the two engines",
+      "mechanical": true
+    },
+    {
+      "path": "AGENTS.md",
+      "action": "modify",
+      "purpose": "project profile names the two engines",
+      "mechanical": true
+    },
+    {
+      "path": "docs/CLI.md",
+      "action": "modify",
+      "purpose": "bearing command on Elasticsearch and OpenSearch",
+      "mechanical": false
+    },
+    {
+      "path": ".claude/rules/architecture.md",
+      "action": "modify",
+      "purpose": "dialects and Data/Search in the layer map",
+      "mechanical": true
+    },
+    {
+      "path": ".claude/rules/data-layer.md",
+      "action": "modify",
+      "purpose": "new section 5.1c",
+      "mechanical": false
+    },
+    {
+      "path": ".claude/rules/security.md",
+      "action": "modify",
+      "purpose": "new section 1.9d",
+      "mechanical": false
+    },
+    {
+      "path": ".claude/rules/testing.md",
+      "action": "modify",
+      "purpose": "search containers and SearchTestServer",
+      "mechanical": true
+    },
+    {
+      "path": "tests/Bearing.Sql.Tests/SearchScanTests.cs",
+      "action": "create",
+      "purpose": "tests: SC2, SC3",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Sql.Tests/ElasticsearchDialectTests.cs",
+      "action": "create",
+      "purpose": "tests: SC4",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Sql.Tests/OpenSearchDialectTests.cs",
+      "action": "create",
+      "purpose": "tests: SC4",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Sql.Tests/SearchCompletionTests.cs",
+      "action": "create",
+      "purpose": "tests: SC5",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchBatchTests.cs",
+      "action": "create",
+      "purpose": "tests: SC2, SC3",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchConnectionFactoryTests.cs",
+      "action": "create",
+      "purpose": "tests: SC6, SC7",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/AwsSigV4Tests.cs",
+      "action": "create",
+      "purpose": "tests: SC7",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchErrorsTests.cs",
+      "action": "create",
+      "purpose": "tests: SC7",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchProtocolTests.cs",
+      "action": "create",
+      "purpose": "tests: SC9",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchValuesTests.cs",
+      "action": "create",
+      "purpose": "tests: SC9",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchContinuationTests.cs",
+      "action": "create",
+      "purpose": "tests: SC9",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchQueryExecutorTests.cs",
+      "action": "create",
+      "purpose": "tests: SC10",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchMetadataReaderTests.cs",
+      "action": "create",
+      "purpose": "tests: SC11",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchMappingsTests.cs",
+      "action": "create",
+      "purpose": "tests: SC11",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchProviderTests.cs",
+      "action": "create",
+      "purpose": "tests: SC1",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/ProviderRegistryTests.cs",
+      "action": "modify",
+      "purpose": "tests: SC1",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/ProviderClassificationTests.cs",
+      "action": "modify",
+      "purpose": "tests: SC6, SC7",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchLiveTests.cs",
+      "action": "create",
+      "purpose": "tests: SC12, SC13, SC14, SC15, SC16",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Shared/SearchTestServer.cs",
+      "action": "create",
+      "purpose": "tests: SC12, SC13, SC14, SC15, SC16",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.App.Tests/ProviderTraitsTests.cs",
+      "action": "modify",
+      "purpose": "tests: SC1",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.App.Tests/SshTunnelTests.cs",
+      "action": "modify",
+      "purpose": "tests: SC17",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchScanParityTests.cs",
+      "action": "create",
+      "purpose": "tests: SC2",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.App.Tests/Ui/ConnectionEditorTests.cs",
+      "action": "modify",
+      "purpose": "tests: SC18",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.App.Tests/ConnectionFieldModelTests.cs",
+      "action": "modify",
+      "purpose": "tests: SC18",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.App.Tests/SearchResultTests.cs",
+      "action": "create",
+      "purpose": "tests: SC19",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Cli.Tests/SearchExposureTests.cs",
+      "action": "create",
+      "purpose": "tests: SC20",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Cli.Tests/ConnectionListingTests.cs",
+      "action": "modify",
+      "purpose": "tests: SC20",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Sql/ExternalSqlPolicy.cs",
+      "action": "modify",
+      "purpose": "amended after B2 (auto-fixable drift): a dialect's whole-sentence denial is returned as-is instead of being wrapped in the credentials sentence",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Core/Data/ConnectionInfo.cs",
+      "action": "modify",
+      "purpose": "amended after B8: one doc-comment sentence on ConnectionField.Choices (a shipped provider now declares a Choice field)",
+      "mechanical": true
+    },
+    {
+      "path": "src/Bearing.Sessions/SshTunnels.cs",
+      "action": "modify",
+      "purpose": "review fix R2: dead SshTunnelHandle.Route removed, Endpoint added",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.App/ViewModels/ConnectionsViewModel.cs",
+      "action": "modify",
+      "purpose": "review fix R2: SamePool compares sign-in options and credential kind for engines that declare PoolOptions",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.App.Tests/ConnectionManagementTests.cs",
+      "action": "modify",
+      "purpose": "review fix R2: pool eviction on sign-in change",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Cli/Tools/Responses.cs",
+      "action": "modify",
+      "purpose": "R3 (user decision 2026-11-21): the bearing command carries server notices",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Cli/Tools/CellValue.cs",
+      "action": "modify",
+      "purpose": "R3 (user decision 2026-11-21): the bearing command carries server notices",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Cli/Tools/BearingHost.cs",
+      "action": "modify",
+      "purpose": "R3 (user decision 2026-11-21): the bearing command carries server notices",
+      "mechanical": false
+    },
+    {
+      "path": "src/Bearing.Cli/TextTable.cs",
+      "action": "modify",
+      "purpose": "R3 (user decision 2026-11-21): the bearing command carries server notices",
+      "mechanical": false
+    },
+    {
+      "path": "tests/Bearing.Cli.Tests/CliTests.cs",
+      "action": "modify",
+      "purpose": "R3 (user decision 2026-11-21): the bearing command carries server notices",
+      "mechanical": false
+    }
+  ],
+  "public_contracts": [
+    {
+      "kind": "method",
+      "signature": "Bearing.Core.Data.IDbProvider.CreateConnectionFactory(ConnectionInfo info, string? password, TunnelEndpoint tunnel) - default member",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.Core.Data.TunnelEndpoint(string Host, int Port) record",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.Sql.ISqlDialect.CompletesAt(string sql, int caret) - default true",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.Core.Data.QueryResult.Notice (string?, init)",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "schema",
+      "signature": "ConnectionInfo.ProviderId values 'elasticsearch' and 'opensearch'; Options keys 'Authentication' (elasticsearch) and 'Region' (opensearch) in project.json",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "cli-flag",
+      "signature": "bearing query / tables / describe accept exposed elasticsearch and opensearch connections",
+      "change": "modified",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.Sessions.ProviderTraits.AwsProfileNote (string?, init)",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.App.Connections.ConnectionFieldModel.PasswordLabel (string)",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.Sql.SearchScan (public static: Statements, Tokens, Split, StatementAt, InString, EndsWithLineComment, CodeEnd, RedactLiterals) with SearchEngine, SearchLanguage, SearchToken, SearchStatement; ElasticsearchDialect; OpenSearchDialect",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.Data.Search.SearchProvider, SearchConnectionFactory, SearchQueryExecutor, SearchMetadataReader (public)",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "method",
+      "signature": "Bearing.Sessions.ProviderTraits.PoolOptions (IReadOnlyList<string>, init); Bearing.Sessions.SshTunnelHandle.Endpoint (TunnelEndpoint); SshTunnelHandle.Route removed",
+      "change": "new",
+      "surface": "external"
+    },
+    {
+      "kind": "cli-flag",
+      "signature": "bearing query JSON: optional result-set field 'notice'; export response: optional 'notices' list; --table/--tsv: a 'notice: <text>' line",
+      "change": "new",
+      "surface": "external"
+    }
+  ],
+  "success_criteria": [
+    {
+      "id": "SC1",
+      "description": "both engines registered after dynamodb, named Elasticsearch / OpenSearch, each with its own traits arm, dialect and flags",
+      "verification": "dotnet test --filter \"FullyQualifiedName~ProviderRegistryTests\"; dotnet test --filter \"FullyQualifiedName~ProviderTraitsTests\"; dotnet test --filter \"FullyQualifiedName~SearchProviderTests\"",
+      "evidence_channel": "test-run",
+      "observable": "classes pass and registry ids equal postgres, sqlserver, mysql, dynamodb, elasticsearch, opensearch"
+    },
+    {
+      "id": "SC2",
+      "description": "language routing follows Behaviour 4 for every row, and the Sql and Data scanners agree on a shared corpus",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchScanTests\"; dotnet test --filter \"FullyQualifiedName~SearchBatchTests\"; dotnet test --filter \"FullyQualifiedName~SearchScanParityTests\"",
+      "evidence_channel": "test-run",
+      "observable": "theories pass and the parity test reports 0 disagreements"
+    },
+    {
+      "id": "SC3",
+      "description": "splitting and string detection read each language's own lexical forms",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchScanTests\"; dotnet test --filter \"FullyQualifiedName~SearchBatchTests\"",
+      "evidence_channel": "test-run",
+      "observable": "theories pass"
+    },
+    {
+      "id": "SC4",
+      "description": "dialect surface: quoting, SelectTopRows, null paging/count hooks, FormatRefusal, no explain, no variables, write guard, CLI allow-list and denials",
+      "verification": "dotnet test --filter \"FullyQualifiedName~ElasticsearchDialectTests\"; dotnet test --filter \"FullyQualifiedName~OpenSearchDialectTests\"",
+      "evidence_channel": "test-run",
+      "observable": "theories pass"
+    },
+    {
+      "id": "SC5",
+      "description": "no completion inside a piped statement; index and field names complete inside SQL on both engines",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchCompletionTests\"",
+      "evidence_channel": "test-run",
+      "observable": "tests pass"
+    },
+    {
+      "id": "SC6",
+      "description": "transport: scheme and certificate handling per TLS mode, Prefer fallback only on handshake failure, no redirects, exact Basic and ApiKey headers, no header when user and password are blank, AWS profile over non-loopback http refused",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchConnectionFactoryTests\"",
+      "evidence_channel": "test-run",
+      "observable": "theories pass"
+    },
+    {
+      "id": "SC7",
+      "description": "SigV4 signatures equal AWS's published vectors; content-sha256 and security-token headers sent and signed; service and region resolution; no key, secret or token in any error text",
+      "verification": "dotnet test --filter \"FullyQualifiedName~AwsSigV4Tests\"; dotnet test --filter \"FullyQualifiedName~SearchConnectionFactoryTests\"; dotnet test --filter \"FullyQualifiedName~SearchErrorsTests\"",
+      "evidence_channel": "test-run",
+      "observable": "theories pass"
+    },
+    {
+      "id": "SC8",
+      "description": "DynamoDB sign-in behaves as before after the credential lookup is shared",
+      "verification": "dotnet test --filter \"FullyQualifiedName~DynamoDbConnectionFactoryTests\"; dotnet test --filter \"FullyQualifiedName~DynamoDbProviderTests\"",
+      "evidence_channel": "test-run",
+      "observable": "existing tests pass"
+    },
+    {
+      "id": "SC9",
+      "description": "protocol: request bodies and response parsing for four endpoints, type mapping, continuation round trip and refusal of foreign tokens, later-page misfit fails naming the column",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchProtocolTests\"; dotnet test --filter \"FullyQualifiedName~SearchValuesTests\"; dotnet test --filter \"FullyQualifiedName~SearchContinuationTests\"",
+      "evidence_channel": "test-run",
+      "observable": "theories pass"
+    },
+    {
+      "id": "SC10",
+      "description": "executor against a fake API: batch with StatementIndex, cursor to continuation, continuation sends only the cursor, rejected cursor gives the expired sentence with 0 statement re-sends, a server warning reaches Notice and never Message, 1 s timeout cancels with the timeout sentence",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchQueryExecutorTests\"",
+      "evidence_channel": "test-run",
+      "observable": "tests pass and the fake records 0 statement re-sends on continuation"
+    },
+    {
+      "id": "SC11",
+      "description": "metadata against a fake API: indices, aliases, data streams as relations, hidden left out, mappings flattened to dotted columns, sizes tolerate missing fields",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchMetadataReaderTests\"; dotnet test --filter \"FullyQualifiedName~SearchMappingsTests\"",
+      "evidence_channel": "test-run",
+      "observable": "tests pass"
+    },
+    {
+      "id": "SC12",
+      "description": "live, both engines: connect with security off; snapshot lists a fixture index with fields, an alias as a view, a data stream; sizes return",
+      "verification": "./build/test-db-search.sh; dotnet test --filter \"FullyQualifiedName~SearchLiveTests\"",
+      "evidence_channel": "test-run",
+      "observable": "pass with 0 skipped while both containers are up"
+    },
+    {
+      "id": "SC13",
+      "description": "live, both engines: SQL over 250 documents at page size 100 returns 100 + continuation, 100, then 50 with no continuation; 250 distinct ids",
+      "verification": "./build/test-db-search.sh; dotnet test --filter \"FullyQualifiedName~SearchLiveTests\"",
+      "evidence_channel": "test-run",
+      "observable": "pass with 0 skipped while both containers are up"
+    },
+    {
+      "id": "SC14",
+      "description": "live: ES|QL and PPL return typed rows; ES|QL without LIMIT carries the default-limit warning; a cursor closed on the server gives the expired sentence",
+      "verification": "./build/test-db-search.sh; dotnet test --filter \"FullyQualifiedName~SearchLiveTests\"",
+      "evidence_channel": "test-run",
+      "observable": "pass with 0 skipped while both containers are up"
+    },
+    {
+      "id": "SC15",
+      "description": "live: value types round-trip; an OpenSearch aggregate SQL statement sent with fetch_size returns its rows",
+      "verification": "./build/test-db-search.sh; dotnet test --filter \"FullyQualifiedName~SearchLiveTests\"",
+      "evidence_channel": "test-run",
+      "observable": "pass with 0 skipped while both containers are up"
+    },
+    {
+      "id": "SC16",
+      "description": "live with security on (Elasticsearch): Basic sign-in works, wrong password classifies Authentication, an API key signs in",
+      "verification": "./build/test-db-search.sh; dotnet test --filter \"FullyQualifiedName~SearchLiveTests\"",
+      "evidence_channel": "test-run",
+      "observable": "pass with 0 skipped while the secured container is up"
+    },
+    {
+      "id": "SC17",
+      "description": "a tunnelled connection is built with the real host and the tunnel's loopback end; other engines still receive the rewritten host",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SshTunnelTests\"",
+      "evidence_channel": "test-run",
+      "observable": "new cases pass and existing cases pass unchanged"
+    },
+    {
+      "id": "SC18",
+      "description": "editor shows each engine's fields and credential kinds, hides manual commit and session time zone, shows TLS and SSH; password label follows the provider's label",
+      "verification": "dotnet test --filter \"FullyQualifiedName~ConnectionEditorTests\"; dotnet test --filter \"FullyQualifiedName~ConnectionFieldModelTests\"",
+      "evidence_channel": "test-run",
+      "observable": "new cases pass"
+    },
+    {
+      "id": "SC19",
+      "description": "results on both engines carry the editing lock sentence; a SQL result with a continuation pages through ExecuteContinuationAsync; manual commit is never effective",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchResultTests\"",
+      "evidence_channel": "test-run",
+      "observable": "tests pass"
+    },
+    {
+      "id": "SC20",
+      "description": "bearing: exposed connections listed; allowed statements run; writes, denied pipe commands and dot-index names refused and logged; --out follows the cursor; --max-rows trims an ES|QL result; explain refused",
+      "verification": "dotnet test --filter \"FullyQualifiedName~SearchExposureTests\"; dotnet test --filter \"FullyQualifiedName~ConnectionListingTests\"",
+      "evidence_channel": "test-run",
+      "observable": "tests pass and the fake executor records 0 calls for refused statements"
+    },
+    {
+      "id": "SC21",
+      "description": "nothing regresses and layering holds",
+      "verification": "dotnet build; dotnet test; grep -c Reference src/Bearing.Core/Bearing.Core.csproj; git diff main -- Directory.Packages.props",
+      "evidence_channel": "build-output",
+      "observable": "build exit 0, test exit 0, 0 Reference items in Bearing.Core.csproj, empty diff of Directory.Packages.props"
+    },
+    {
+      "id": "SC22",
+      "description": "docs and rules name both engines",
+      "verification": "grep -l Elasticsearch and grep -l OpenSearch over README.md CLAUDE.md AGENTS.md docs/CLI.md .claude/rules/architecture.md .claude/rules/data-layer.md .claude/rules/security.md .claude/rules/testing.md",
+      "evidence_channel": "script-output",
+      "observable": "every listed file has at least 1 match for each name"
+    }
+  ],
+  "test_manifest": [
+    {
+      "path": "tests/Bearing.Sql.Tests/SearchScanTests.cs",
+      "covers": [
+        "SC2",
+        "SC3"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Sql.Tests/ElasticsearchDialectTests.cs",
+      "covers": [
+        "SC4"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Sql.Tests/OpenSearchDialectTests.cs",
+      "covers": [
+        "SC4"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Sql.Tests/SearchCompletionTests.cs",
+      "covers": [
+        "SC5"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchBatchTests.cs",
+      "covers": [
+        "SC2",
+        "SC3"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchConnectionFactoryTests.cs",
+      "covers": [
+        "SC6",
+        "SC7"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/AwsSigV4Tests.cs",
+      "covers": [
+        "SC7"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchErrorsTests.cs",
+      "covers": [
+        "SC7"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchProtocolTests.cs",
+      "covers": [
+        "SC9"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchValuesTests.cs",
+      "covers": [
+        "SC9"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchContinuationTests.cs",
+      "covers": [
+        "SC9"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchQueryExecutorTests.cs",
+      "covers": [
+        "SC10"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchMetadataReaderTests.cs",
+      "covers": [
+        "SC11"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchMappingsTests.cs",
+      "covers": [
+        "SC11"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchProviderTests.cs",
+      "covers": [
+        "SC1"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/ProviderRegistryTests.cs",
+      "covers": [
+        "SC1"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/ProviderClassificationTests.cs",
+      "covers": [
+        "SC6",
+        "SC7"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchLiveTests.cs",
+      "covers": [
+        "SC12",
+        "SC13",
+        "SC14",
+        "SC15",
+        "SC16"
+      ]
+    },
+    {
+      "path": "tests/Shared/SearchTestServer.cs",
+      "covers": [
+        "SC12",
+        "SC13",
+        "SC14",
+        "SC15",
+        "SC16"
+      ]
+    },
+    {
+      "path": "tests/Bearing.App.Tests/ProviderTraitsTests.cs",
+      "covers": [
+        "SC1"
+      ]
+    },
+    {
+      "path": "tests/Bearing.App.Tests/SshTunnelTests.cs",
+      "covers": [
+        "SC17"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Data.Tests/SearchScanParityTests.cs",
+      "covers": [
+        "SC2"
+      ]
+    },
+    {
+      "path": "tests/Bearing.App.Tests/Ui/ConnectionEditorTests.cs",
+      "covers": [
+        "SC18"
+      ]
+    },
+    {
+      "path": "tests/Bearing.App.Tests/ConnectionFieldModelTests.cs",
+      "covers": [
+        "SC18"
+      ]
+    },
+    {
+      "path": "tests/Bearing.App.Tests/SearchResultTests.cs",
+      "covers": [
+        "SC19"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Cli.Tests/SearchExposureTests.cs",
+      "covers": [
+        "SC20"
+      ]
+    },
+    {
+      "path": "tests/Bearing.Cli.Tests/ConnectionListingTests.cs",
+      "covers": [
+        "SC20"
+      ]
+    }
+  ],
+  "out_of_scope": [
+    "grid editing and any document or index write",
+    "Query DSL (JSON) requests, EQL, ES|QL SET/LET directives and ? parameters, async queries",
+    "completion, formatting and comment toggling for ES|QL and PPL; any ANTLR grammar for the four languages",
+    ":name variables and @set; explain/translate; Activity panel; session time zone",
+    "Bearer/JWT, SAML, Kerberos, client certificates, custom CA file or fingerprint, Elastic Cloud ID, URL path prefix",
+    "legacy Amazon Elasticsearch domains (_opendistro), Elasticsearch 7 and older, OpenSearch 1.x",
+    "cross-cluster browsing; frozen and hidden indices in the tree",
+    "closing server cursors when a result is discarded; total row counts",
+    "a new CredentialKind or ConnectionInfo field",
+    "any new package",
+    "release notes",
+    ".claude/analytics.json (dirty before this work)",
+    ".claude/observability/ (dirty before this work)"
+  ],
+  "security_impact": "new-auth-path",
+  "baseline_area": "database-engines",
+  "delta": {
+    "adds": [
+      "elasticsearch engine",
+      "opensearch engine",
+      "IDbProvider tunnel-aware factory overload",
+      "ISqlDialect.CompletesAt"
+    ],
+    "modifies": [
+      "DynamoDB credential lookup (shared helper)",
+      "connection dialog password label"
+    ],
+    "removes": []
+  },
+  "assumptions": [
+    "[VERIFIED:src/Bearing.Sessions/ProviderTraits.cs] a provider and its dialect are paired by one id, so two quoting styles need two provider ids",
+    "[VERIFIED:src/Bearing.App/Results/ContinuationPaging.cs] a result carrying QueryResult.Continuation already loads more and fetches all through ExecuteContinuationAsync",
+    "[VERIFIED:src/Bearing.Cli/Tools/BearingHost.cs] the bearing command follows continuations and trims to --max-rows for an engine whose traits say ReadsContinueByToken",
+    "[VERIFIED:src/Bearing.Sessions/SshTunnels.cs] Route replaces Host and Port with the loopback end, so the real name is lost before the provider",
+    "[COVERAGE:2] CreateConnectionFactory has two production callers, both in ConnectionFactoryBuilder (build and test)",
+    "[VERIFIED:src/Bearing.Sql/LineCommenter.cs] toggle-comment takes no dialect and writes -- everywhere",
+    "[VERIFIED:src/Bearing.App/Views/ConnectionDialog.axaml] the password label is a fixed string today",
+    "[VERIFIED:src/Bearing.App/ViewModels/SchemaNodes.cs] a view-like relation offers Show definition regardless of OffersTableDdl",
+    "[CITED:https://www.elastic.co/docs/reference/query-languages/sql/sql-pagination] Elasticsearch SQL returns a cursor while rows remain; page_timeout default 45s; one command per request; no OFFSET; no write statement",
+    "[CITED:https://www.elastic.co/docs/reference/query-languages/esql/limitations] ES|QL returns 1000 rows by default and never more than 10000; no cursor; no released write command",
+    "[CITED:https://github.com/opensearch-project/sql/blob/main/docs/user/interfaces/endpoint.rst] OpenSearch SQL pages only with fetch_size and only plain selects; cursor keep-alive is a cluster setting, default 1m",
+    "[CITED:https://github.com/opensearch-project/sql/tree/main/docs/user/ppl] PPL has one statement per request, no cursor and no write command",
+    "[CITED:https://docs.aws.amazon.com/opensearch-service/latest/developerguide/serverless-clients.html] SigV4 service is aoss for Serverless and es for domains; Serverless requires x-amz-content-sha256",
+    "[CITED:https://github.com/awslabs/aws-c-auth/tree/main/tests/aws-signing-test-suite/v4] AWS's SigV4 test vectors are available as fixtures",
+    "[ASSUMED] an OpenSearch SQL statement the server cannot page still returns its rows when sent with fetch_size (SC15 measures it)",
+    "[ASSUMED] the error for an expired or closed cursor is recognisable on both engines (SC14 pins it)",
+    "[ASSUMED] GET /*/_mapping?expand_wildcards=open includes data streams' backing indices (SC12 measures it)",
+    "[ASSUMED] a bare dotted field path resolves in Elasticsearch SQL and OpenSearch SQL (SC15 pins it)",
+    "[ASSUMED] the ES|QL default-limit notice arrives as an HTTP Warning header readable by HttpClient (SC14)",
+    "[ASSUMED] OpenSearch timestamps without a zone are UTC (SC15)",
+    "[ASSUMED] Amazon OpenSearch domains and Serverless accept the signature as built - cannot be covered here, needs the user's test against a real domain",
+    "[ASSUMED] closing the HTTP connection cancels the running query on the server; no Bearing copy claims it"
+  ],
+  "risks": [
+    "a very large _mapping on clusters with thousands of indices - stream with a 64 MB ceiling; above it the schema load fails with a sentence and queries still run",
+    "the Sql and Data scanners can drift - SearchScanParityTests",
+    "otherwise-routing sends a mistyped first word to SQL - errors name the language they were sent as",
+    "OpenSearch's 1-minute cursor keep-alive is a cluster setting Bearing cannot change - the expired sentence says so",
+    "new first tokens in future PPL / ES|QL versions read as risky until listed - a prompt, never a silent run",
+    "the Prompt credential dialog says password for an API key (known limitation)",
+    "changing only Authentication, AWS region or credential kind does not evict a live pool on save; the next acquire rebuilds it (SameConnection)",
+    "ResultSetBuilder.StatementsBehind and GoToDefinition still split with the Postgres lexer and return null on text they cannot read (existing safe answer)",
+    "SigV4 changes the stated AWS-secret posture (security.md 1.9c) - needs explicit approval, recorded as Decision 2",
+    "headless UI assertions do not prove the dialog or tree look right - eyeball QA",
+    "rollback: additive only - removing the two registry entries and traits arms withdraws both engines",
+    "dirty-worktree: .claude/analytics.json and .claude/observability/ predate this work and are out of scope"
+  ],
+  "coverage_claims": [
+    {
+      "claim": "changing ConnectionFactoryBuilder.BuildAsync and TestAsync covers every tunnelled connect",
+      "write_sites": [
+        "src/Bearing.Sessions/ConnectionFactoryBuilder.cs:31",
+        "src/Bearing.Sessions/ConnectionFactoryBuilder.cs:55"
+      ],
+      "verified": true
+    }
+  ],
+  "conditional_descopes": [
+    {
+      "condition": "Decision 2 (Bearing code holds AWS credentials in memory to sign) is declined at the approval gate",
+      "action": "drop batch B4 whole; OpenSearch answers SupportsAwsProfile false; AwsProfileNote is not added; SC7's signature half and SC8 fall away",
+      "fired": false
+    },
+    {
+      "condition": "the tunnel seam disturbs existing tunnel tests beyond the new overload",
+      "action": "drop the Core seam; tunnels reach these engines by rewritten host and AWS-profile sign-in through a tunnel is refused with a sentence",
+      "fired": false
+    },
+    {
+      "condition": "the secured Elasticsearch container cannot be provisioned in CI within the job's memory",
+      "action": "SC16 runs locally only and is asserted against the fake API in CI",
+      "fired": false
+    }
+  ],
+  "decisions": [
+    {
+      "id": "Q1",
+      "decision": "SQL plus ES|QL (Elasticsearch) and PPL (OpenSearch)",
+      "by": "user 2026-11-21"
+    },
+    {
+      "id": "Q2",
+      "decision": "user + password, API key, AWS profile (SigV4)",
+      "by": "user 2026-11-21"
+    },
+    {
+      "id": "Q3",
+      "decision": "bearing command reads exposed connections",
+      "by": "user 2026-11-21"
+    },
+    {
+      "id": "D1",
+      "batch": "B9",
+      "decision": "Elasticsearch quotes any dotted name whole (\"user.name\", \"logs-2026.11.21\")",
+      "why": "measured on 9.5.6: a bare index name with . or - does not parse; the quoted whole form works as an index and still resolves as a field. Departs from the spec sentence 'a dotted path of plain words is not quoted' for Elasticsearch only",
+      "by": "orchestrator, from the B9 measurement"
+    },
+    {
+      "id": "D2",
+      "batch": "B9",
+      "decision": "OpenSearch SQL sends fetch_size only for a plain select",
+      "why": "measured on 3.10.0: with fetch_size any non-pageable shape is answered by the legacy engine, which mislabels column types and fails on a backticked dotted index; without it the main engine answers whole with real types",
+      "by": "orchestrator, from the B9 measurement"
+    },
+    {
+      "id": "D3",
+      "batch": "B9",
+      "decision": "an ES|QL answer with is_partial true carries a notice",
+      "why": "measured: HTTP 200, is_partial true, no Warning header — the result looked complete",
+      "by": "orchestrator, from the B9 measurement"
+    },
+    {
+      "id": "D4",
+      "batch": "B9",
+      "decision": "an error's root_cause reason is appended when it differs from the reason",
+      "why": "measured: a closed cursor answers 'all shards failed' with the real cause only in root_cause",
+      "by": "orchestrator, from the B9 measurement"
+    },
+    {
+      "id": "D5",
+      "batch": "B9",
+      "decision": "a statement with no code (a bare ;) is not described by the write guard",
+      "why": "select 1;; was refused on a read-only connection (found in B5)",
+      "by": "orchestrator"
+    },
+    {
+      "id": "D6",
+      "batch": "R3",
+      "decision": "the bearing command carries server notices: ResultSet.notice (JSON), a 'notice:' line in --table/--tsv, ExportResponse.notices",
+      "why": "a partial ES|QL answer (is_partial) reached scripts and agents with truncated:false and nothing marking it; raised by three review lanes. Reverses the spec sentence 'the bearing command does not repeat notices'",
+      "by": "user 2026-11-21 (Novadeck ask)"
+    }
+  ],
+  "plan": {
+    "batches": [
+      {
+        "id": "B1",
+        "title": "Seams, no behaviour change",
+        "files": [
+          "src/Bearing.Core/Data/TunnelEndpoint.cs",
+          "src/Bearing.Core/Data/IDbProvider.cs",
+          "src/Bearing.Sessions/ConnectionFactoryBuilder.cs",
+          "src/Bearing.Sql/ISqlDialect.cs",
+          "src/Bearing.Sql/CompletionEngine.cs",
+          "src/Bearing.Core/Data/QueryResult.cs",
+          "tests/Bearing.App.Tests/SshTunnelTests.cs"
+        ],
+        "acceptance": "SC17: a tunnelled build hands the provider the real host plus the loopback end; the default member rewrites Host/Port exactly as Route did; every existing test passes unchanged",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "Core gains a record and a default member and no reference; no existing provider or fake changes behaviour; the refusals in RouteAsync (unsupported tunnel, named instance) stay where they are",
+        "depends": [],
+        "governing_constraints": [
+          "§0.1",
+          "§2.1",
+          "§2.2",
+          "§1.12"
+        ],
+        "depends_rationale": "independent: first batch, creates the seams the others use"
+      },
+      {
+        "id": "B2",
+        "title": "SearchScan and the two dialects",
+        "files": [
+          "src/Bearing.Sql/SearchScan.cs",
+          "src/Bearing.Sql/ElasticsearchDialect.cs",
+          "src/Bearing.Sql/OpenSearchDialect.cs",
+          "tests/Bearing.Sql.Tests/SearchScanTests.cs",
+          "tests/Bearing.Sql.Tests/ElasticsearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/OpenSearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/SearchCompletionTests.cs",
+          "src/Bearing.Sql/ExternalSqlPolicy.cs",
+          "src/Bearing.Sql/ISqlDialect.cs"
+        ],
+        "acceptance": "SC2-SC5 (Sql half)",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "the guard only widens: an unknown first word is risky; no existing dialect or rule set changes; Bearing.Sql gains no reference",
+        "depends": [
+          "B1"
+        ],
+        "governing_constraints": [
+          "§1.2",
+          "§1.11a",
+          "§1.11b",
+          "§2.2",
+          "§2.5",
+          "§9.5"
+        ]
+      },
+      {
+        "id": "B3",
+        "title": "Transport",
+        "files": [
+          "src/Bearing.Data/Search/ISearchApi.cs",
+          "src/Bearing.Data/Search/SearchConnectionFactory.cs",
+          "src/Bearing.Data/Search/SearchErrors.cs",
+          "tests/Bearing.Data.Tests/SearchConnectionFactoryTests.cs",
+          "tests/Bearing.Data.Tests/SearchErrorsTests.cs"
+        ],
+        "acceptance": "SC6",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "certificate validation is relaxed only in the TLS mode that says so; redirects are never followed; no secret or Authorization value reaches a message or log; a refused setting fails the connect, not the constructor",
+        "depends": [
+          "B1"
+        ],
+        "governing_constraints": [
+          "§1.1",
+          "§1.4",
+          "§1.12",
+          "§4.1",
+          "§5.3"
+        ]
+      },
+      {
+        "id": "B4",
+        "title": "SigV4 (only if Decision 2 is approved)",
+        "files": [
+          "src/Bearing.Data/Search/AwsSigV4.cs",
+          "src/Bearing.Data/Aws/AwsProfileCredentials.cs",
+          "src/Bearing.Data/DynamoDb/DynamoDbConnectionFactory.cs",
+          "src/Bearing.Data/Search/SearchConnectionFactory.cs",
+          "tests/Bearing.Data.Tests/AwsSigV4Tests.cs",
+          "tests/Bearing.Data.Tests/SearchConnectionFactoryTests.cs",
+          "tests/Bearing.Data.Tests/SearchErrorsTests.cs"
+        ],
+        "acceptance": "SC7, SC8",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "credentials are asked from the SDK per request and never kept in a Bearing field, logged or shown; sign-in errors are built from the profile name alone; DynamoDB's sign-in behaviour and sentences are unchanged; the editor still never reads the credentials file",
+        "depends": [
+          "B3"
+        ],
+        "governing_constraints": [
+          "§0.3",
+          "§1.1",
+          "§1.9c"
+        ]
+      },
+      {
+        "id": "B5",
+        "title": "Protocol",
+        "files": [
+          "src/Bearing.Data/Search/SearchBatch.cs",
+          "src/Bearing.Data/Search/SearchProtocol.cs",
+          "src/Bearing.Data/Search/SearchValues.cs",
+          "src/Bearing.Data/Search/SearchContinuation.cs",
+          "tests/Bearing.Data.Tests/SearchBatchTests.cs",
+          "tests/Bearing.Data.Tests/SearchProtocolTests.cs",
+          "tests/Bearing.Data.Tests/SearchValuesTests.cs",
+          "tests/Bearing.Data.Tests/SearchContinuationTests.cs",
+          "tests/Bearing.Data.Tests/SearchScanParityTests.cs"
+        ],
+        "acceptance": "SC2, SC3 (Data half), SC9",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "reads are lossless: a value that does not fit is never altered or dropped; the continuation decodes only what this class wrote; Bearing.Data does not reference Bearing.Sql",
+        "depends": [
+          "B1",
+          "B2"
+        ],
+        "governing_constraints": [
+          "§1.3",
+          "§2.2",
+          "§5.1b",
+          "§5.7"
+        ]
+      },
+      {
+        "id": "B6",
+        "title": "Executor",
+        "files": [
+          "src/Bearing.Data/Search/SearchQueryExecutor.cs",
+          "tests/Bearing.Data.Tests/SearchQueryExecutorTests.cs"
+        ],
+        "acceptance": "SC10",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "a continuation never re-sends the statement; ExecuteAsync returns its failures and the stream throws them (the interface's contract); the timeout is a client-side cancel and is named as ours only when it is ours",
+        "depends": [
+          "B3",
+          "B5"
+        ],
+        "governing_constraints": [
+          "§1.9a",
+          "§5.7",
+          "§5.8",
+          "§4.4"
+        ]
+      },
+      {
+        "id": "B7",
+        "title": "Metadata",
+        "files": [
+          "src/Bearing.Data/Search/SearchMappings.cs",
+          "src/Bearing.Data/Search/SearchMetadataReader.cs",
+          "tests/Bearing.Data.Tests/SearchMetadataReaderTests.cs",
+          "tests/Bearing.Data.Tests/SearchMappingsTests.cs"
+        ],
+        "acceptance": "SC11",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "absence stays typed: a kind the engine lacks is an empty list, a refused read is an error; no credential-bearing index or setting is read; hidden indices are never listed",
+        "depends": [
+          "B3"
+        ],
+        "governing_constraints": [
+          "§1.8",
+          "§5.6",
+          "§9.9"
+        ]
+      },
+      {
+        "id": "B8",
+        "title": "Provider, registry, traits",
+        "files": [
+          "src/Bearing.Data/Search/SearchProvider.cs",
+          "src/Bearing.Data/ProviderRegistry.cs",
+          "src/Bearing.Data/Bearing.Data.csproj",
+          "src/Bearing.Sessions/ProviderTraits.cs",
+          "tests/Bearing.Data.Tests/SearchProviderTests.cs",
+          "tests/Bearing.Data.Tests/ProviderRegistryTests.cs",
+          "tests/Bearing.App.Tests/ProviderTraitsTests.cs",
+          "tests/Bearing.Data.Tests/ProviderClassificationTests.cs"
+        ],
+        "acceptance": "SC1",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "a provider is never registered without its traits arm; every flag is answered explicitly; no package is added",
+        "depends": [
+          "B2",
+          "B4",
+          "B6",
+          "B7"
+        ],
+        "governing_constraints": [
+          "§1.9a",
+          "§2.2",
+          "§2.4",
+          "§2.6"
+        ]
+      },
+      {
+        "id": "B9",
+        "title": "Live plumbing",
+        "files": [
+          ".github/workflows/ci.yml",
+          "build/test-db-search.sh",
+          "src/Bearing.Data/Search/SearchBatch.cs",
+          "src/Bearing.Data/Search/SearchErrors.cs",
+          "src/Bearing.Data/Search/SearchProtocol.cs",
+          "src/Bearing.Data/Search/SearchQueryExecutor.cs",
+          "src/Bearing.Data/Search/SearchValues.cs",
+          "src/Bearing.Sql/ElasticsearchDialect.cs",
+          "src/Bearing.Sql/OpenSearchDialect.cs",
+          "src/Bearing.Sql/SearchScan.cs",
+          "tests/Bearing.Data.Tests/Bearing.Data.Tests.csproj",
+          "tests/Bearing.Data.Tests/SearchBatchTests.cs",
+          "tests/Bearing.Data.Tests/SearchErrorsTests.cs",
+          "tests/Bearing.Data.Tests/SearchLiveTests.cs",
+          "tests/Bearing.Data.Tests/SearchProtocolTests.cs",
+          "tests/Bearing.Data.Tests/SearchQueryExecutorTests.cs",
+          "tests/Bearing.Data.Tests/SearchScanParityTests.cs",
+          "tests/Bearing.Data.Tests/SearchValuesTests.cs",
+          "tests/Bearing.Sql.Tests/ElasticsearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/OpenSearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/SearchCompletionTests.cs",
+          "tests/Bearing.Sql.Tests/SearchScanTests.cs",
+          "tests/Shared/SearchTestServer.cs"
+        ],
+        "acceptance": "SC12-SC16 with 0 skipped while the containers are up",
+        "verification": "./build/test-db-search.sh then dotnet test (CLAUDE.md, Tech Stack; .claude/rules/testing.md §4.2)",
+        "boundary": "live tests skip without their container and never fail without one; fixtures are created through raw HTTP, uniquely named and removed; images are pinned and overridable by environment variable",
+        "depends": [
+          "B8"
+        ],
+        "governing_constraints": [
+          "§4.2",
+          "§4.7"
+        ]
+      },
+      {
+        "id": "B10",
+        "title": "App",
+        "files": [
+          "src/Bearing.App/Connections/ConnectionFieldModel.cs",
+          "src/Bearing.App/Views/ConnectionDialog.axaml.cs",
+          "tests/Bearing.App.Tests/Ui/ConnectionEditorTests.cs",
+          "tests/Bearing.App.Tests/ConnectionFieldModelTests.cs",
+          "tests/Bearing.App.Tests/SearchResultTests.cs",
+          "src/Bearing.App/Views/ConnectionDialog.axaml",
+          "src/Bearing.App/Results/ResultSetBuilder.cs",
+          "src/Bearing.Core/Data/ConnectionInfo.cs"
+        ],
+        "acceptance": "SC18, SC19",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "no DB, connection or SQL logic enters a view; MainWindow, ResultView and ShellViewModel do not grow; other engines' dialogs render as before",
+        "depends": [
+          "B8"
+        ],
+        "governing_constraints": [
+          "§0.2",
+          "§0.4",
+          "§0.5",
+          "§2.3",
+          "§4.3",
+          "§4.5"
+        ]
+      },
+      {
+        "id": "B11",
+        "title": "bearing command",
+        "files": [
+          "tests/Bearing.Cli.Tests/SearchExposureTests.cs",
+          "tests/Bearing.Cli.Tests/ConnectionListingTests.cs",
+          "docs/CLI.md"
+        ],
+        "acceptance": "SC20",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "ForExternalHost's three forced settings are untouched; refusals are logged; Bearing.Cli never references App",
+        "depends": [
+          "B8"
+        ],
+        "governing_constraints": [
+          "§1.11",
+          "§1.11a",
+          "§1.11b",
+          "§1.11d",
+          "§1.11e"
+        ]
+      },
+      {
+        "id": "B12",
+        "title": "Docs and rules, full verification",
+        "files": [
+          "README.md",
+          "CLAUDE.md",
+          "AGENTS.md",
+          ".claude/rules/architecture.md",
+          ".claude/rules/data-layer.md",
+          ".claude/rules/security.md",
+          ".claude/rules/testing.md"
+        ],
+        "acceptance": "SC21, SC22",
+        "verification": "dotnet build && dotnet test (CLAUDE.md, Tech Stack)",
+        "boundary": "docs state only what was built and measured; nothing describes Require as verified, read-only as a boundary, or an AWS path as tested",
+        "depends": [
+          "B9",
+          "B10",
+          "B11"
+        ],
+        "governing_constraints": [
+          "§1.1",
+          "§1.4",
+          "§1.9"
+        ]
+      }
+    ]
+  },
+  "implement": {
+    "completed_batches": [
+      {
+        "batch_id": "B1",
+        "actual_files": [
+          "src/Bearing.Core/Data/TunnelEndpoint.cs",
+          "src/Bearing.Core/Data/IDbProvider.cs",
+          "src/Bearing.Core/Data/QueryResult.cs",
+          "src/Bearing.Sessions/ConnectionFactoryBuilder.cs",
+          "src/Bearing.Sql/ISqlDialect.cs",
+          "src/Bearing.Sql/CompletionEngine.cs",
+          "tests/Bearing.App.Tests/SshTunnelTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "B1-build: Build succeeded, 0 errors, 2 warnings (both in files this batch did not touch)"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "Full suite (.mtk/evidence/20261121-125517-B1-full-1987.log): Sql 2902, Cli 216, Data 741 (43 skipped), Persistence 154, Updates 73, App 2910 passed / 8 failed — all 8 in LiveSshTunnelTests because the bastion container had stopped answering; orchestrator restarted bearing-ssh-test and re-ran LiveSshTunnelTests: 8 passed, 0 failed. Net: 7004 passed / 0 failed / 71 skipped (baseline 7000 + 4 new)."
+        },
+        "behavioral_diff": "No user-visible change. Tunnelled builds call provider.CreateConnectionFactory(unroutedInfo, password, new TunnelEndpoint(\"127.0.0.1\", tunnel.LocalPort)); the default interface member rewrites Host/Port exactly as SshTunnelHandle.Route did. Members: Bearing.Core.Data.TunnelEndpoint(string Host, int Port); IDbProvider default member CreateConnectionFactory(ConnectionInfo info, string? password, TunnelEndpoint tunnel) — an engine 'overrides' it by declaring a public method with that signature on a class that lists IDbProvider; QueryResult.Notice (string?, init; nothing sets or shows it yet); ISqlDialect.CompletesAt(string sql, int caret) default true, asked by CompletionEngine.CompleteCore right after InStringLiteral and in IntentsAtCore (which now takes the dialect); internal ConnectionFactoryBuilder.CreateFactory(IDbProvider, ConnectionInfo, string?, SshTunnelHandle?) and (…, TunnelEndpoint?) — the only two production callers of CreateConnectionFactory; RouteAsync now returns (ConnectionInfo Info, SshTunnelHandle? Tunnel) with Info UNROUTED; SshTunnelHandle.Route remains with no production caller.",
+        "deviations": [
+          {
+            "kind": "other",
+            "detail": "two internal CreateFactory overloads added in ConnectionFactoryBuilder; RouteAsync tuple element renamed Target -> Info",
+            "justification": "a real SshTunnelHandle cannot be built without a live SSH session, so the TunnelEndpoint overload is what unit tests call"
+          }
+        ],
+        "implementer_model": "sonnet"
+      },
+      {
+        "batch_id": "B2",
+        "actual_files": [
+          "src/Bearing.Sql/SearchScan.cs",
+          "src/Bearing.Sql/ElasticsearchDialect.cs",
+          "src/Bearing.Sql/OpenSearchDialect.cs",
+          "src/Bearing.Sql/ExternalSqlPolicy.cs",
+          "src/Bearing.Sql/ISqlDialect.cs",
+          "tests/Bearing.Sql.Tests/SearchScanTests.cs",
+          "tests/Bearing.Sql.Tests/ElasticsearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/OpenSearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/SearchCompletionTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "B2-build exit=0; Build succeeded, 0 errors, 2 pre-existing warnings"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "Bearing.Sql.Tests: 3280 passed / 0 failed / 0 skipped (.mtk/evidence/20261121-132419-B2-project-21722.log); Bearing.Cli.Tests: 216 passed / 0 failed (.mtk/evidence/20261121-132438-B2-cli-21933.log)"
+        },
+        "behavioral_diff": "Nothing a user can reach changes: neither dialect is registered (B8 does that). New public API in Bearing.Sql: enum SearchEngine{Elasticsearch,OpenSearch}; enum SearchLanguage{Sql,Piped}; enum SearchTokenKind{Word,Number,QuotedName,String,LineComment,BlockComment,Punctuation}; record SearchToken(SearchTokenKind Kind,int Start,int End /*exclusive*/,string Text,bool Terminated=true){bool IsCode}; record SearchStatement(StatementSpan Span,SearchLanguage Language,bool LanguageFromLeadWord,IReadOnlyList<string> LeadWords /*up to 2, upper-cased*/,string Verb /*first code token, upper-cased*/,IReadOnlyList<string> PipeCommands /*first word after each depth-0 '|', \"\" if none*/,IReadOnlyList<SearchToken> Tokens). static SearchScan: Statements(SearchEngine,string), Tokens(SearchEngine,string), Split(SearchEngine,string)->IReadOnlyList<StatementSpan>, StatementAt(SearchEngine,string,int)->SearchStatement?, InString(SearchEngine,string,int), EndsWithLineComment(SearchEngine,string), CodeEnd(SearchEngine,string)->int?, RedactLiterals(SearchEngine,string?). Internal: Describe, CommandWords, DotIndexName. ElasticsearchDialect.Instance (Id \"elasticsearch\", PgParseRules, double-quote names, its own keyword list for quoting) and OpenSearchDialect.Instance (Id \"opensearch\", MySqlParseRules, backtick names). ExternalDeniedStatement returns a whole refusal sentence ending in '.', which ExternalSqlPolicy.Refuse now returns as-is (a shape NAME still gets the credentials wrapper, so MySQL is unchanged). RULES SearchBatch (B5) MUST MIRROR — they are in the SearchScan type doc: (1) The prelude (leading whitespace, comments, lead words) is read with: on Elasticsearch --, // and nested /* */; on OpenSearch #, -- followed by whitespace or end of text, //, and non-nested /* */; strings and names by the engine's SQL rules. (2) The 'otherwise' rule reads the statement by SQL rules; a depth-0 '|' (not '||') makes it Piped, and it is then re-read by PPL / ES|QL rules. (3) A statement ends at ';' at any depth. It ALSO ends at a blank line at depth 0 before an opener word, unless the previous code token is , ( | UNION INTERSECT EXCEPT or MINUS. Elasticsearch openers: SELECT SHOW DESCRIBE EXPLAIN SYS DEBUG PROMQL. OpenSearch openers: SELECT SHOW DESCRIBE EXPLAIN DELETE SEARCH SOURCE MULTISEARCH MAKERESULTS GRAPHLOOKUP. (4) Spans follow StatementSplitter's Postgres contract (a theory pins this). On an exposed connection an unknown first word is refused by ExternalSqlPolicy as \"'FOO' is not a read\"; a PPL statement starting with '|' as \"'|' is not a read\". Dot-index refusal checks bare/quoted/backticked names across the statement, and strings only where they name the source (ES|QL FROM/TS segment; PPL source=/index= values).",
+        "deviations": [
+          {
+            "kind": "extra-file",
+            "detail": "src/Bearing.Sql/ExternalSqlPolicy.cs: a dialect's ExternalDeniedStatement answer that ends in '.' is returned as-is instead of being wrapped in the 'It can return credentials (§1.8)' sentence; src/Bearing.Sql/ISqlDialect.cs: one doc paragraph saying so",
+            "justification": "the credentials sentence would assert a false cause for inference/ML commands and dot-index refusals (§1.1); what is refused is unchanged, existing dialects' answers never end in '.', Cli tests 216/216"
+          }
+        ],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B3",
+        "actual_files": [
+          "src/Bearing.Data/Search/ISearchApi.cs",
+          "src/Bearing.Data/Search/SearchConnectionFactory.cs",
+          "src/Bearing.Data/Search/SearchErrors.cs",
+          "tests/Bearing.Data.Tests/SearchConnectionFactoryTests.cs",
+          "tests/Bearing.Data.Tests/SearchErrorsTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0 (label B3-build): 'dotnet build -p:RestoreConfigFile=… --nologo -v q' → 0 Error(s), 2 Warning(s), both already there in Bearing.App.Tests (ResultFilterSortUiTests CS8602, LookProbe CS0618). None in Search files. Log: .mtk/evidence/*-B3-build-*.log"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "B3-tests exit=0: --filter SearchConnectionFactoryTests|SearchErrorsTests → Passed 110, Failed 0, Skipped 0 (2 s), log .mtk/evidence/20261121-134030-B3-tests-31605.log. B3-project exit=0: whole tests/Bearing.Data.Tests → Passed 851, Failed 0, Skipped 43, Total 894 (8 m). All 43 skips are the live SQL Server suites (SqlServer*/ManualCommitLiveTests SqlServer_*), which skip without their container. None are Search tests."
+        },
+        "behavioral_diff": "Nothing is registered yet, so a user sees no change. New internal surface in Bearing.Data.Search for B4–B8. ISearchApi.cs: internal enum SearchEngine{Elasticsearch,OpenSearch}; internal sealed record SearchResponse(int StatusCode, byte[] Body, IReadOnlyList<string> Warnings){bool IsSuccess; string BodyText} — Warnings are the RAW Warning header values; pulling out the quoted text is the protocol's job. internal interface ISearchApi:IDisposable{Task<SearchResponse> SendAsync(HttpMethod method, string pathAndQuery /*already escaped, leading '/'*/, byte[]? jsonBody, long maxResponseBytes, CancellationToken ct)} — a non-2xx comes back as an answer; transport failures throw; an over-ceiling body throws SearchResponseTooLargeException. Auth seam: internal interface ISearchRequestAuth{ValueTask ApplyAsync(HttpRequestMessage request, ReadOnlyMemory<byte> body, CancellationToken ct)} with NoSearchAuth.Instance, BasicSearchAuth(string user,string password), ApiKeySearchAuth(string apiKey). internal sealed class HttpSearchApi(HttpClient client, Uri baseUri, ISearchRequestAuth auth):ISearchApi{Uri BaseUri}. SearchConnectionFactory (public sealed, IDbConnectionFactory): public consts AuthenticationOption=\"Authentication\", AuthenticationPassword=\"User and password\", AuthenticationApiKey=\"API key\", RegionOption=\"Region\", DefaultPort=9200; internal consts DefaultResponseLimitBytes=64 MB and RootResponseLimitBytes=1 MB; internal static ConnectTimeout=15 s. Constructors: internal SearchConnectionFactory(SearchEngine engine, ConnectionInfo info, string? secret, TunnelEndpoint? tunnel = null) and internal SearchConnectionFactory(ISearchApi api, SearchEngine engine, ConnectionInfo info) — the api comes FIRST, see traps. Members: internal SearchEngine Engine; internal ConnectionInfo Info (the real, unrouted host); internal int StatementTimeoutSeconds; internal SearchAuthMethod? AuthMethod; internal Uri? BaseUri (null until the first request settles it); internal Task<SearchResponse> SendAsync(HttpMethod method, string pathAndQuery, byte[]? jsonBody, long maxResponseBytes, CancellationToken ct) — the ONE door for the executor and the reader: it returns 2xx and other statuses, and throws SearchConfigurationException (refused setting, nothing sent), SearchSignInException (401), SearchServerException (3xx, not followed), SearchTransportException (scrubbed), SearchResponseTooLargeException, or OperationCanceledException as it came. There is deliberately no public Api property, because Prefer/redirect/401 handling would be bypassed. public Task<bool> TestConnectionAsync(ct): GET / → true on 2xx; on 404/405 it judges by GET /_cat/indices?format=json&h=index; every failure THROWS its sentence. internal static bool CertificateAccepted(TlsMode, SslPolicyErrors). SearchErrors.cs: internal enum SearchAuthMethod{None,Basic,ApiKey,AwsSigV4}; static SearchErrors with consts SignInCode, TimeoutCode, CanceledCode, RedirectCode, SyntaxCode, ExcerptLength; EngineName(SearchEngine); ClassifyState(string?); Classify(Exception); SignInSentence(SearchEngine, SearchAuthMethod, string? user); TimeoutSentence(SearchEngine, int seconds); RedirectSentence(int); const sentences HostOnlySentence, HostMissingSentence, ApiKeyMissingSentence, ControlCharacterSentence, AwsPlainHttpSentence, AwsNoTlsSentence, SigningUnavailableSentence; UnknownAuthenticationSentence(string); UnsupportedCredentialSentence(SearchEngine, CredentialKind); TooLargeSentence(long); QueryError ToQueryError(int status, byte[] body, string? language /*'SQL','ES|QL','PPL' leads the message*/, string? statement) — SqlState is error.type, else SyntaxCode, else 'HTTP n'; Position is 1-based (PostgreSQL's convention) from 'line L:C:'; QueryError ToQueryError(Exception, SearchEngine, int timeoutSeconds, bool timedOut=false); int? PositionOf(string,int line,int column); string DescribeTransport(Exception); string Scrub(string) (Authorization values, Basic/ApiKey/Bearer tokens of 8+ characters, api_key=/password=, URL user-info, then DynamoDbErrors.Scrub). Exceptions: SearchConfigurationException(string); SearchSignInException(SearchEngine, SearchAuthMethod, string? user){Method}; SearchTransportException(string, HttpRequestError?, Exception?){Error}; SearchServerException(int statusCode, QueryError error){StatusCode, Error}; SearchResponseTooLargeException(long){LimitBytes}.",
+        "deviations": [],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B4",
+        "actual_files": [
+          "src/Bearing.Data/Aws/AwsProfileCredentials.cs",
+          "src/Bearing.Data/Search/AwsSigV4.cs",
+          "src/Bearing.Data/DynamoDb/DynamoDbConnectionFactory.cs",
+          "src/Bearing.Data/Search/SearchConnectionFactory.cs",
+          "src/Bearing.Data/Search/SearchErrors.cs",
+          "tests/Bearing.Data.Tests/AwsSigV4Tests.cs",
+          "tests/Bearing.Data.Tests/SearchConnectionFactoryTests.cs",
+          "tests/Bearing.Data.Tests/SearchErrorsTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0, 0 Warning(s) 0 Error(s); log .mtk/evidence/20261121-141240-B4-build2-55737.log (final build, after the last edit)"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "Filtered run (AwsSigV4Tests|SearchConnectionFactoryTests|SearchErrorsTests|DynamoDbConnectionFactoryTests|DynamoDbProviderTests) after the final build: exit=0, Passed 242 / Failed 0 / Skipped 0, log .mtk/evidence/20261121-141252-B4-tests2-55936.log. Whole tests/Bearing.Data.Tests: exit 0, Passed 920 / Failed 0 / Skipped 43, log .mtk/evidence/20261121-140429-B4-project-53630.log. The 43 skips are the known SQL Server port mismatch (traps). That whole-project run came before the final edit, which only added an unreachable fail-closed arm to SearchConnectionFactory.AuthOf; the filtered classes were run again after it. The DynamoDB test files were not edited (SC8)."
+        },
+        "behavioral_diff": "OpenSearch with CredentialKind.AwsProfile now signs every request with SigV4 instead of refusing with SigningUnavailableSentence, which is removed. Service is aoss when the host holds .aoss. or .aoss-fips., else es. Region comes from Options[\"Region\"] (trimmed, lower-cased, must be letters, digits and hyphens), else from the host (*.<r>.es.amazonaws.com, *.<r>.aoss.amazonaws.com, *.aoss[-fips].<r>.on.aws), else the connect is refused with AwsRegionMissingSentence. Signed headers are host, x-amz-content-sha256 (always sent) and x-amz-date, plus x-amz-security-token when there is a token (sent and signed). The Host header is set to exactly the signed value: the real host, also through a tunnel. Credentials are asked for on every request. A failure to get credentials is a SearchSignInException (Authentication) built from the profile name only, with no inner exception. DynamoDB behaves exactly as before. MEMBERS: Bearing.Data.Aws: static AwsProfileCredentials.TryNamed(string profile, string? profilesLocation, out AWSCredentials? credentials, out AwsSignInProblem problem) -> bool; AwsProfileCredentials.DefaultChainAsync(CancellationToken) -> Task<AWSCredentials>; enum AwsSignInProblem{CouldNotSignIn,ProfileNotFound,ProfileHasNoCredentials}. Bearing.Data.Search: static AwsSigV4 {consts Algorithm, EmptyPayloadHash, DateHeader, ContentHashHeader, SecurityTokenHeader; Sign(string method, Uri uri, string host, ReadOnlySpan<byte> payload, string region, string service, string accessKey, string secretKey, string? sessionToken, DateTime utcNow) -> AwsSigV4Headers{AmzDate, ContentSha256, SecurityToken?, Authorization, SignedHeaders, All}; Compute(method, path, query, IEnumerable<KeyValuePair<string,string>> headersToSign, payloadHash, region, service, accessKey, secretKey, utcNow) -> AwsSigV4Steps{CanonicalRequest, StringToSign, SignedHeaders, Signature, Authorization}; CanonicalRequest, CanonicalUri, CanonicalQuery, CanonicalHeaders, StringToSign, Signature, PayloadHash, AmzDate}. interface IAwsCredentialSource{Task<ImmutableCredentials> GetAsync(CancellationToken)}. AwsProfileCredentialSource(SearchEngine, string? profile, string? profilesLocation = null). AwsSigV4SearchAuth(SearchEngine, string? profile, IAwsCredentialSource, string region, string service, TimeProvider) : ISearchRequestAuth {Region, Service, static HostHeader(Uri)}. SearchConnectionFactory: new internal ctor (SearchEngine, ConnectionInfo, string? secret, TunnelEndpoint? tunnel, IAwsCredentialSource? awsCredentials, TimeProvider? clock); the 4-argument ctor delegates to it with nulls; internal static ServiceFor(string? host), ResolveRegion(ConnectionInfo), RegionFromHost(string? host). SearchErrors: AwsSignInSentence(SearchEngine, string? profile, AwsSignInProblem); consts AwsRegionMissingSentence, AwsRegionInvalidSentence; Scrub also redacts Credential=, Signature=, X-Amz-Credential= and X-Amz-Signature=. SearchSignInException: new ctor (SearchEngine, string? profile, AwsSignInProblem), with Method = AwsSigV4 and a new AwsSignInProblem? Problem (null for an HTTP 401).",
+        "deviations": [
+          {
+            "kind": "extra-file",
+            "detail": "src/Bearing.Data/Search/SearchErrors.cs: added AwsSignInSentence, the two region sentences, a SearchSignInException ctor plus Problem, and the SigV4 Scrub rule; removed SigningUnavailableSentence.",
+            "justification": "The batch requires new sign-in sentences and Scrub over Credential= and Signature= (tested in SearchErrorsTests), and both live in this file. The removed sentence would have been false once signing exists."
+          },
+          {
+            "kind": "extra-contract",
+            "detail": "Internal-only additions not named in the spec: IAwsCredentialSource, AwsProfileCredentialSource, AwsSigV4SearchAuth, AwsSigV4Headers, AwsSigV4Steps, AwsSignInProblem, and the 6-argument SearchConnectionFactory ctor.",
+            "justification": "The fake credential source and fixed clock the batch's tests ask for need this seam. Everything is internal and adds no public API."
+          }
+        ],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B5",
+        "actual_files": [
+          "src/Bearing.Data/Search/SearchBatch.cs",
+          "src/Bearing.Data/Search/SearchProtocol.cs",
+          "src/Bearing.Data/Search/SearchValues.cs",
+          "src/Bearing.Data/Search/SearchContinuation.cs",
+          "tests/Bearing.Data.Tests/SearchBatchTests.cs",
+          "tests/Bearing.Data.Tests/SearchProtocolTests.cs",
+          "tests/Bearing.Data.Tests/SearchValuesTests.cs",
+          "tests/Bearing.Data.Tests/SearchContinuationTests.cs",
+          "tests/Bearing.Data.Tests/SearchScanParityTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0; 'Build succeeded. 0 Error(s)'; log .mtk/evidence/20261121-142853-B5-build-1613.log. The only warnings are pre-existing ones in App.Tests (ResultFilterSortUiTests CS8602, LookProbe CS0618)."
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "The five classes: exit=0, Passed 831 / Failed 0 / Skipped 0 (.mtk/evidence/20261121-142857-B5-tests-1639.log). Whole Bearing.Data.Tests project: exit=0, Passed 1751 / Failed 0 / Skipped 43 / Total 1794, 7 m 57 s (.mtk/evidence/20261121-142910-B5-project-1847.log). The 43 skips are the SQL Server live tests (B3 trap: the container is on 11433, the tests default to 1433), not this batch. Parity: 0 disagreements over a corpus of more than 200 scripts, run on both engines."
+        },
+        "behavioral_diff": "Nothing is registered yet, so a user sees no change. All of the following is internal, in Bearing.Data.Search, for B6. SearchBatch.cs: enum SearchLanguage{Sql,Piped}; record SearchBatchStatement(int Start, string Text, SearchLanguage Language, string Verb){bool IsEmpty}. Text runs from the first code token to the last, with no trailing ';' and no comment before or after (comments inside are kept). A bare ';' is kept as an IsEmpty statement so that statement N here is statement N of SearchScan.Split. Statements(SearchEngine engine, string script) -> IReadOnlyList<SearchBatchStatement>; LanguageName(SearchEngine, SearchLanguage) -> \"SQL\"|\"ES|QL\"|\"PPL\". SearchProtocol.cs: record SearchEndpoint(SearchEngine Engine, SearchLanguage Language, string Path, string LanguageName, bool Pages); record SearchColumn(string Name, string TypeName); record SearchPage(IReadOnlyList<SearchColumn>? Columns, IReadOnlyList<JsonElement[]> Rows, string? Cursor, string? Notice). static SearchProtocol{const PageTimeout=\"5m\", DefaultFetchSize=1000, MaxFetchSize=10000, MaxNoticeLength=500; SearchEndpoint EndpointFor(SearchEngine, SearchLanguage) (one shared instance per endpoint); int FetchSize(int? maxRows); byte[] FirstPageBody(SearchEndpoint, string query, int? maxRows); byte[] ContinuationBody(SearchEndpoint, string cursor) (InvalidOperationException on a piped endpoint); SearchPage ParseFirstPage(SearchEndpoint, SearchResponse); SearchPage ParseContinuationPage(SearchEndpoint, SearchResponse, int columnCount); string? Notice(IReadOnlyList<string> warningHeaders, IEnumerable<string> bodyWarnings); IReadOnlyList<string> WarningTexts(string header)}. SearchProtocolException(SearchEndpoint, string problem){Endpoint}: thrown for any unexpected shape AND for a non-2xx response, so B6 must check response.IsSuccess first and use SearchErrors.ToQueryError(status, body, endpoint.LanguageName, stmt.Text). The cursor is ignored on ES|QL and PPL. SearchValues.cs: enum SearchCellKind{Boolean,Integer,UnsignedLong,Float,Text,Binary,DateTime,Date,Time,Json}; record SearchLayoutColumn(string Name, string TypeName, SearchCellKind Kind){ColumnDescriptor Descriptor}; record SearchLayout(IReadOnlyList<SearchLayoutColumn> Columns){IReadOnlyList<ColumnDescriptor> Descriptors()}. static SearchValues{const ExcerptLength=80; Type ClrType(SearchCellKind); SearchCellKind Suggested(string typeName); (SearchLayout Layout, IReadOnlyList<object?[]> Rows) FirstPage(IReadOnlyList<SearchColumn>, IReadOnlyList<JsonElement[]>); IReadOnlyList<object?[]> LaterPage(SearchLayout, IReadOnlyList<JsonElement[]>); bool TryCell(SearchCellKind, JsonElement, out object?); string AsText(JsonElement)}. SearchValueMisfitException(SearchLayoutColumn, string excerpt){Column, TypeName, Excerpt}: its message names the column, the declared type and the excerpt. A date/datetime/timestamp/time column with no non-null value on the first page becomes text. SearchContinuation.cs: record SearchContinuation(SearchEngine Engine, SearchLanguage Language, string Cursor, SearchLayout Layout, int StatementIndex){const Prefix=\"search1.\"; SearchEndpoint Endpoint; string Encode() (ArgumentException for a piped language, a blank cursor or a negative index); static SearchContinuation Decode(string)}. Decode throws SearchContinuationException : FormatException, with fixed text, on anything this class did not write.",
+        "deviations": [
+          {
+            "kind": "extra-contract",
+            "detail": "SearchContinuation also carries StatementIndex (the brief listed engine, language, cursor and layout).",
+            "justification": "This mirrors DynamoDbContinuation, so a continuation result keeps its StatementIndex. It is an integer, not statement text."
+          },
+          {
+            "kind": "other",
+            "detail": "These internal helper types are not named in the spec: SearchBatchStatement, SearchEndpoint, SearchColumn, SearchPage, SearchCellKind, SearchLayout, SearchLayoutColumn, SearchProtocolException, SearchValueMisfitException, SearchContinuationException.",
+            "justification": "These are the neutral shapes and typed errors the brief asked for. All are internal."
+          }
+        ],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B6",
+        "actual_files": [
+          "src/Bearing.Data/Search/SearchQueryExecutor.cs",
+          "tests/Bearing.Data.Tests/SearchQueryExecutorTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0, Build succeeded. Log: .mtk/evidence/20261121-144731-B6-build-11119.log (rebuilt after the test fix, exit=0 again)"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "B6-tests (filter SearchQueryExecutorTests): exit=0, Passed 43, Failed 0, Skipped 0. Log: .mtk/evidence/20261121-144812-B6-tests-11998.log. B6-project (all of tests/Bearing.Data.Tests): exit 0, Passed 1794, Failed 0, Skipped 43, Total 1837, 8 m 1 s. Log: .mtk/evidence/20261121-144826-B6-project-12225.log. The 43 skips are the SQL Server live tests: that container is on 11433, not 1433 (the known B3 trap). A skip is not a pass."
+        },
+        "behavioral_diff": "No provider is registered yet, so a user sees no change. New: public sealed SearchQueryExecutor : IQueryExecutor with ctor public SearchQueryExecutor(SearchConnectionFactory factory). B8 calls it as new SearchQueryExecutor(factory). Members: Task<IReadOnlyList<QueryResult>> ExecuteAsync(string sql, QueryOptions options, CancellationToken ct); Task<QueryResult> ExecuteContinuationAsync(string continuation, int maxRows, CancellationToken ct); IAsyncEnumerable<RowBatch> StreamRowsAsync(string sql, QueryOptions options, CancellationToken ct); Task<QueryResult> ExecutePageAsync(string pageSql, IReadOnlyList<QueryParameter> parameters, CancellationToken ct) returns an error result; Task<long?> CountAsync(string countSql, IReadOnlyList<QueryParameter> parameters, CancellationToken ct) returns null; Task<IReadOnlyList<QueryResult>> ExecuteWriteAsync(IReadOnlyList<SqlWriteCommand>, CancellationToken) returns one error result. ExecuteStreamingAsync is left at the interface default. Internal sentences: const NothingToRun; static OffsetPagingUnavailable(SearchEngine), GeneratedWritesUnavailable(SearchEngine), VariablesUnavailable(SearchEngine), CursorLifetime(SearchEngine), CursorRejectedSentence(SearchEngine, int status, string reason), NoColumnsSentence(SearchEngine, string language, int rows). Behaviour: SearchBatch splits the script and each statement is POSTed alone through factory.SendAsync to SearchProtocol.EndpointFor(engine, language), with a 64 MB ceiling. A bare ';' sends nothing but keeps its StatementIndex. The run stops at the first failure and returns earlier results plus that failure. A script with no statement returns [NothingToRun]. Parameters return [VariablesUnavailable] with nothing sent; StreamRowsAsync throws NotSupportedException instead. SQL: a cursor gives Truncated=true and Continuation=SearchContinuation.Encode(). ES|QL, PPL and SQL without a cursor are returned whole (MaxRows not applied, Truncated false). Notice comes from the page; Message is null on every result with columns. Error position = statement.Start + the server's 1-based position, so it is an offset in the script. A continuation sends only {\"cursor\"} to the token's endpoint. A token from another engine is refused with nothing sent. A rejected cursor (non-2xx) gives CursorRejectedSentence with the cursor text cut out of the server's reason; SqlState is the server's type. A later-page misfit gives the page's error naming the column. Timeout: our deadline gives TimeoutSentence and TimeoutCode; the caller's cancel throws OperationCanceledException.",
+        "deviations": [],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B7",
+        "actual_files": [
+          "src/Bearing.Data/Search/SearchMappings.cs",
+          "src/Bearing.Data/Search/SearchMetadataReader.cs",
+          "tests/Bearing.Data.Tests/SearchMappingsTests.cs",
+          "tests/Bearing.Data.Tests/SearchMetadataReaderTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0; 0 Warning(s) 0 Error(s); log .mtk/evidence/20261121-150737-B7-build-21222.log"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "Batch classes (SearchMetadataReaderTests + SearchMappingsTests): exit=0, Passed 44, Failed 0, Skipped 0 (.mtk/evidence/20261121-150742-B7-tests-21248.log). Whole Bearing.Data.Tests: exit=0, Passed 1838, Failed 0, Skipped 43 (the 43 are the SQL Server live tests that skip on every run on this host, port 11433 vs 1433), 8 m 1 s (.mtk/evidence/20261121-150750-B7-project-21459.log)"
+        },
+        "behavioral_diff": "Not registered yet, so a user sees no change. New: public sealed SearchMetadataReader : IMetadataReader, ctor public SearchMetadataReader(SearchConnectionFactory factory). B8 calls it as `new SearchMetadataReader((SearchConnectionFactory)factory)` in CreateMetadataReader. What it does: GetDatabasesAsync returns [Info.Host trimmed] and sends no request. LoadSnapshotAsync(db) makes four calls in this order: GET IndicesPath, AliasesPath, DataStreamsPath, then MappingsPath (skipped when nothing is listed), plus GET /<escaped streams joined by comma>/_mapping for streams whose newest (last-listed) backing index the first mapping answer lacked. Relations sit in schema \"\", sorted by name: indices and streams are Table, aliases are View. Dot-named names are left out, and so are streams marked hidden or system, aliases marked is_hidden, and aliases with no listed target. Columns come from SearchMappings: ordinal 1..n, NotNull false, IsPrimaryKey false, no foreign keys. An alias's columns are merged first-seen (`keyword | text`); a stream's columns come from its newest backing index. A _data_stream answer of 400, 404 or 405 means no streams; any other non-2xx throws SearchServerException(status, QueryError) whose message names the call: 403 reads `{Engine} refused listing the data streams (_data_stream, HTTP 403): <scrubbed reason>.`, any other status reads `{Engine} answered … with HTTP n: …`, and SqlState is the server's error type. A 401 is the factory's SearchSignInException. A mapping answer over 64 MB throws internal SearchMetadataException(MappingsTooLargeSentence); a body that is not JSON throws SearchMetadataException(UnreadableSentence). GetRelationSizesAsync: one entry per listed index from _cat/indices; store.size goes to Total and Table bytes, Index and Toast are 0, docs.count goes to EstimatedRows. A missing or non-numeric store.size gives no entry; a bad docs.count gives a null count. Aliases and streams get no entry. GetViewDefinitionAsync re-reads /_alias and returns comment lines only (`-- alias \"x\" points at: a, b`, a hidden-target count, then `-- filtered`, `-- index routing` and `-- search routing` notes, once or per target); an id that is not a listed alias returns \"\". GetTableDetails returns TableDetails.Empty; routines, objects, roles and tablespaces are empty; GetRoleGrants returns RoleGrants.NotVisible; GetRoutineDefinition throws NotSupportedException(\"{Engine} has no stored routines.\"); GetDatabaseSizes returns [DatabaseSize(host, null)]; SampleAttributesAsync is the interface default (null). Internal members: consts IndicesPath, AliasesPath, DataStreamsPath, MappingsPath, MappingLimitBytes, MaxStreamMappingPathLength; static StableId(string name) (= MySqlMetadataReader.StableId(\"\", name)), IsHidden(string), StreamMappingPaths(IReadOnlyList<string>), AliasDefinition(AliasEntry), ParseIndices, ParseAliases, ParseDataStreams(JsonElement), CallFailedSentence(SearchEngine, string doing, string api, int status, string reason), UnreadableSentence(...), MappingsTooLargeSentence(long). SearchMappings (internal static): record SearchField(string Path, string Type); Fields(JsonElement mappings), Flatten(JsonElement properties), ByIndex(JsonElement response) -> Dictionary<string, IReadOnlyList<SearchField>>, Merge(IEnumerable<IReadOnlyList<SearchField>>); consts MaxDepth=20, ObjectType=\"object\", NestedType=\"nested\", TypeSeparator=\" | \".",
+        "deviations": [
+          {
+            "kind": "extra-contract",
+            "detail": "Internal types not named in the spec: SearchField, SearchMetadataException (in SearchMetadataReader.cs), and nested records IndexEntry, StreamEntry, AliasEntry, AliasTarget",
+            "justification": "SearchErrors.cs is outside this batch, so the over-ceiling and unreadable-answer sentences needed an exception type of their own; the records keep parsing pure and testable"
+          },
+          {
+            "kind": "other",
+            "detail": "The follow-up stream mapping request is split into several requests when the joined names would pass 2000 characters (StreamMappingPaths)",
+            "justification": "The brief says ask once. That still holds in the normal case, and the split keeps a request line short enough for the server to accept it when a cluster has hundreds of streams"
+          }
+        ],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B8",
+        "actual_files": [
+          "src/Bearing.Data/Search/SearchProvider.cs",
+          "src/Bearing.Data/ProviderRegistry.cs",
+          "src/Bearing.Data/Bearing.Data.csproj",
+          "src/Bearing.Sessions/ProviderTraits.cs",
+          "tests/Bearing.Data.Tests/SearchProviderTests.cs",
+          "tests/Bearing.Data.Tests/ProviderRegistryTests.cs",
+          "tests/Bearing.Data.Tests/ProviderClassificationTests.cs",
+          "tests/Bearing.App.Tests/ProviderTraitsTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0; 0 Error(s), 2 Warning(s), both already there (ResultFilterSortUiTests CS8602, LookProbe CS0618); log .mtk/evidence/20261121-152555-B8-build-34883.log"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "Batch filter (SearchProviderTests|ProviderRegistryTests|ProviderClassificationTests|ProviderTraits*|CredentialKindOptionsTests): exit=0, Data.Tests 98 passed/0 failed/0 skipped, App.Tests 57/0/0 (.mtk/evidence/20261121-152607-B8-tests-35089.log). FULL dotnet test --no-build: exit=0 (.mtk/evidence/20261121-152617-B8-full-35301.log): Updates 73 passed/0 failed/3 skipped; Persistence 154/0/1; Sql 3280/0/0; Cli 216/0/0; App 2937/0/24 (21 LookProbe, 3 WorkbookExcelReadback); Data 1884/0/43 (SQL Server live tests skip: the container is on 11433, the tests expect 1433, same as every earlier run). LiveSshTunnelTests passed and no docker restart was needed. The search live tests (SC12-16) do not exist yet (B9)."
+        },
+        "behavioral_diff": "Elasticsearch and OpenSearch can now be reached. ProviderRegistry's default order is postgres, sqlserver, mysql, dynamodb, elasticsearch, opensearch, so the real dialog's engine picker lists both after DynamoDB. NEW PUBLIC (Bearing.Data.Search): sealed class SearchProvider : IDbProvider, with const ElasticsearchId=\"elasticsearch\" and OpenSearchId=\"opensearch\". Static creators: SearchProvider.Elasticsearch() and SearchProvider.OpenSearch(). Internal: SearchEngine Engine; consts AuthenticationHint, OpenSearchUserHint, RegionHint. DisplayName \"Elasticsearch\"/\"OpenSearch\". ConnectionFields: ES = Host(Text,req,localhost), Port(Number,req,9200), User(Text), Password(Password,'Password or API key'), Authentication(Choice, not required, Default 'User and password', Choices [User and password, API key], Hint). OS = Host, Port, User(Hint naming the profile), Password('Password'), Region('AWS region', Text, Suggestions from AwsRegions as Code+Name, Hint). Flags: EnforcesReadOnlyOnServer false, SupportsSessionTimeZone false, SupportsIntegratedAuth false, SupportsEntraToken false, SupportsPasswordCredentials true, SupportsAwsProfile (OpenSearch only), SupportsManualCommit false, SupportsTlsModes true, SupportsSshTunnel true, SupportsServerActivity false. Classify -> SearchErrors.ClassifyState(SqlState); ClassifyException -> SearchErrors.Classify. CreateConnectionFactory(info, pw) -> new SearchConnectionFactory(engine, info, pw). The public CreateConnectionFactory(ConnectionInfo, string?, TunnelEndpoint) keeps the real host and dials the tunnel; this is proved through the IDbProvider interface by a loopback round trip whose Host header is the real host. CreateMetadataReader/CreateQueryExecutor cast to SearchConnectionFactory. CreateTransactionScope throws NotSupportedException naming SupportsManualCommit. CreateServerActivity -> UnsupportedServerActivity.Instance. Sessions: ProviderTraits.Elasticsearch and ProviderTraits.OpenSearch plus their For() branches (case-insensitive). Dialects are ElasticsearchDialect.Instance and OpenSearchDialect.Instance; Literals are Postgres and MySql. Both use one EndpointHint ('Host is a host name without a scheme (such as search.example.com): the TLS mode decides between http and https, and the default port is 9200.'). Each has its GridEditUnavailable sentence and OffersTableDdl false; WriteBoundary names a role/API key (ES) or a role/IAM policy (OS). ReadsContinueByToken true, SamplesAttributes false, NetworkOptions empty; Entra/Azure members are empty placeholders. New ProviderTraits member: public string? AwsProfileNote { get; init; }. DynamoDb carries the dialog's current AwsProfileHint text verbatim, OpenSearch carries the brief's sentence, all others null; B10 switches the dialog to read it.",
+        "deviations": [],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B9",
+        "actual_files": [
+          ".github/workflows/ci.yml",
+          "build/test-db-search.sh",
+          "src/Bearing.Data/Search/SearchBatch.cs",
+          "src/Bearing.Data/Search/SearchErrors.cs",
+          "src/Bearing.Data/Search/SearchProtocol.cs",
+          "src/Bearing.Data/Search/SearchQueryExecutor.cs",
+          "src/Bearing.Data/Search/SearchValues.cs",
+          "src/Bearing.Sql/ElasticsearchDialect.cs",
+          "src/Bearing.Sql/OpenSearchDialect.cs",
+          "src/Bearing.Sql/SearchScan.cs",
+          "tests/Bearing.Data.Tests/Bearing.Data.Tests.csproj",
+          "tests/Bearing.Data.Tests/SearchBatchTests.cs",
+          "tests/Bearing.Data.Tests/SearchErrorsTests.cs",
+          "tests/Bearing.Data.Tests/SearchLiveTests.cs",
+          "tests/Bearing.Data.Tests/SearchProtocolTests.cs",
+          "tests/Bearing.Data.Tests/SearchQueryExecutorTests.cs",
+          "tests/Bearing.Data.Tests/SearchScanParityTests.cs",
+          "tests/Bearing.Data.Tests/SearchValuesTests.cs",
+          "tests/Bearing.Sql.Tests/ElasticsearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/OpenSearchDialectTests.cs",
+          "tests/Bearing.Sql.Tests/SearchCompletionTests.cs",
+          "tests/Bearing.Sql.Tests/SearchScanTests.cs",
+          "tests/Shared/SearchTestServer.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0, 0 Error(s) (2 existing App.Tests warnings) - .mtk/evidence/20261121-163235-B9b-build2-13152.log"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "SearchLiveTests (filter, containers up): exit=0, Passed 48 / Failed 0 / Skipped 0 (47 earlier + new Measured_14) - .mtk/evidence/20261121-162815-B9b-live-11516.log. Whole Bearing.Sql.Tests: exit=0, Passed 3303 / Failed 0 / Skipped 0 - .mtk/evidence/20261121-164517-B9b-sql2-13591.log. Whole Bearing.Data.Tests: exit=0, Passed 2028 / Failed 0 / Skipped 43 / Total 2071, 12m04s - .mtk/evidence/20261121-163252-B9b-dataproject-13243.log. The 43 skips are the SQL Server live tests, which default to port 1433 while the container listens on 11433. That is the known baseline and has nothing to do with this feature."
+        },
+        "behavioral_diff": "D1: ElasticsearchDialect.NeedsQuoting(id) is now `!PlainWordRegex().IsMatch(id) || Keywords.Contains(id)`. Any dotted or dashed name is quoted whole (\"user.name\", \"logs-2026.11.21\"), never one segment at a time. Completion inserts \"user.name\" on Elasticsearch and leaves it bare on OpenSearch. OpenSearchDialect code is unchanged; only its doc comment changed. D2: new `internal static bool SearchBatch.IsPlainSelect(SearchEngine, SearchBatchStatement)` and `IsPlainSelect(SearchEngine, SearchLanguage, string text)`, plus `internal static IReadOnlySet<string> SearchBatch.AggregateFunctions`. New `public static bool SearchProtocol.AsksForPages(SearchEndpoint, string query)`. FirstPageBody (same signature) writes fetch_size for Elasticsearch SQL always, for OpenSearch SQL only on a plain select, and never for ES|QL/PPL. RunStatementAsync and StreamRowsAsync both go through it, so an OpenSearch statement that is not plain comes back whole: no cursor, Truncated false. D3: `internal const string SearchProtocol.PartialAnswerSentence` = \"Elasticsearch marked this answer as partial (is_partial), so rows may be missing.\" It leads QueryResult.Notice, ahead of any warning text, when an ES|QL answer has is_partial:true (JSON true only). D4: SearchErrors.ToQueryError(int, byte[], string?, string?) adds ` (<root_cause[0].reason>)` after the text when a reason exists and the root cause is non-blank and not already in the text. The root cause is cut at ExcerptLength (300) and scrubbed. New `internal static string SearchQueryExecutor.WithoutCursor(string message, string cursor)` also removes a cursor prefix (8+ chars) that the 300-char cut left before an ellipsis. D5: SearchScan.Describe skips a statement whose only code is ';'. `select 1;;` describes only SELECT and runs through ExternalSqlPolicy; a lone `;` gets the policy's \"There is no statement here to run.\" Split, Statements and SearchBatch are unchanged. ASSUMPTION RESULTS (updated; Elasticsearch 9.5.6, OpenSearch 3.10.0): (1) An OpenSearch aggregate sent by Bearing (no fetch_size) arrives with the key as keyword (string) and count(*) as long (long values 2, 1), with no cursor. `select n ... limit 2` arrives whole: 2 rows, n typed long, no cursor, even with MaxRows 1. (2) Closed cursor, Elasticsearch: the message now ends `Elasticsearch said: all shards failed (No search context found for id [...])`. OpenSearch's message names SearchContextMissingException through its details; its body has no different root cause. (4) `select * from <dot or dash index> limit 100` (Quote + SelectTopRows), the completed index name, and the completed field (\"user.name\" on ES, bare on OS) all run on both engines. (10) A partial ES|QL answer: HTTP 200, 3 rows, Truncated false, Notice starts with PartialAnswerSentence; a normal answer has a null Notice. (14, new) A non-plain OpenSearch statement is never paged and arrives whole up to plugins.query.size_limit. That setting is 10000 on the test node (read from the node, not assumed), so LIMIT 250 and DISTINCT over 250 docs return 250 rows each. SC13 is unchanged: a plain select over 250 docs pages 100/100/50 on both engines.",
+        "deviations": [
+          {
+            "kind": "extra-file",
+            "detail": "src/Bearing.Sql/OpenSearchDialect.cs: doc comment only. The 'pinned by a live test in batch B9 - not known' wording is replaced by what was measured on OpenSearch 3.10.0. No code changed.",
+            "justification": "D1 asks to replace the 'pinned in B9 / not known' wording, and this file carried the same stale sentence."
+          },
+          {
+            "kind": "extra-contract",
+            "detail": "SearchQueryExecutor.WithoutCursor (internal static) and SearchProtocol.AsksForPages (public static on an internal class). The brief suggested only IsPlainSelect(SearchBatchStatement); I added an (engine, statement) overload and an (engine, language, text) overload.",
+            "justification": "WithoutCursor makes sure the new bounded root cause can never leak a fragment of an echoed cursor (rule 1.3). AsksForPages keeps FirstPageBody's signature, so every caller follows the D2 rule. IsPlainSelect needs the engine to lex the text."
+          },
+          {
+            "kind": "other",
+            "detail": "first pass returned partial (2 live cases failing on dotted index names); resumed once with decisions D1-D5 (sidecar decisions[])",
+            "justification": "measurements contradicted the spec's assumptions; fixes are in manifest files"
+          }
+        ],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B10",
+        "actual_files": [
+          "src/Bearing.App/Connections/ConnectionFieldModel.cs",
+          "src/Bearing.App/Views/ConnectionDialog.axaml",
+          "src/Bearing.App/Views/ConnectionDialog.axaml.cs",
+          "src/Bearing.App/Results/ResultSetBuilder.cs",
+          "src/Bearing.Core/Data/ConnectionInfo.cs",
+          "tests/Bearing.App.Tests/Ui/ConnectionEditorTests.cs",
+          "tests/Bearing.App.Tests/ConnectionFieldModelTests.cs",
+          "tests/Bearing.App.Tests/SearchResultTests.cs"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "exit=0, Build succeeded, 0 Error(s), 2 Warning(s) (both already there: LookProbe.cs CS0618, ResultFilterSortUiTests.cs CS8602). Logs: .mtk/evidence/20261121-165513-B10-build-27940.log; rebuilt after the last edit: .mtk/evidence/20261121-170055-B10-build2-30088.log"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "Whole Bearing.App.Tests project: exit=0, Passed 2974, Failed 0, Skipped 24, Total 2998, 3 m 49 s (.mtk/evidence/20261121-165642-B10-project-28588.log). The 24 skips were already there: LookProbe x15, WorkbookExcelReadbackTests x3 and others. None of them is a new test. LiveSshTunnelTests passed, so no docker restart was needed. After that run I made one last edit (DefaultPasswordLabel changed from public to private, and the test now compares against the literal \"Password\"). I rebuilt and re-ran ConnectionEditorTests, ConnectionFieldModelTests, SearchResultTests and ChoiceFieldTests: exit=0, 133 passed, 0 failed, 0 skipped (.mtk/evidence/20261121-170106-B10-tests2-30114.log). The whole project was not re-run after that edit."
+        },
+        "behavioral_diff": "1) The dialog's password box label now comes from the provider: \"Password or API key\" on Elasticsearch, \"Password\" everywhere else. It is re-read in UpdateCredentialVisibility, which every engine change reaches through RebuildCredentialKinds. PasswordLabel now has TextWrapping=Wrap so the longer label wraps in the 90px column instead of being clipped. 2) AwsProfileHint text now comes from ProviderTraits.For(providerId).AwsProfileNote, set in UpdateCredentialVisibility. The hard-coded Text is removed from the axaml. The hint shows only when the AWS profile kind is selected AND the note is not null. OpenSearch shows its signing sentence; DynamoDB's sentence is unchanged word for word. 3) DescribeResults appends the first non-blank QueryResult.Notice, trimmed: 'Done · 88 ms — <notice>'. When a budget notice also exists the line reads 'Done · 88 ms — <budget> Load more continues from where it stopped. — <notice>'. A run with an error and a no-columns result are unchanged. 4) Elasticsearch's Authentication default ('User and password') is preselected (SelectedIndex 0) and is NOT written to Options. Picking 'API key' writes Options[\"Authentication\"]=\"API key\", and a saved connection reopens with it selected. NEW MEMBER: public string ConnectionFieldModel.PasswordLabel { get; } (falls back to a private const \"Password\" when the provider declares no Password field or a blank label). Private only: ResultSetBuilder.ServerNotice(IReadOnlyList<QueryResult>). The test registry ConnectionEditorProbe.Registry() now holds six engines, with Elasticsearch at index 4 and OpenSearch at 5. EYEBALL QA: (a) the 'Password or API key' label in the 90px column on Elasticsearch (it wraps to two lines; check alignment with the box); (b) the OpenSearch AWS-profile hint wording and wrap under the credential picker; (c) DynamoDB's hint still reads as before; (d) the Elasticsearch Authentication dropdown and its field hint, and OpenSearch's Region picker and User hint; (e) a long Notice in the status bar (truncation or overflow) after a partial ES|QL answer; (f) Postgres, SQL Server, MySQL and DynamoDB dialogs look as they did.",
+        "deviations": [
+          {
+            "kind": "other",
+            "detail": "ConnectionInfo.cs: I reworded two adjacent doc sentences in the Choices param, not one ('nothing declares yet' -> 'nothing declared at the time', and the 'No shipped provider declares one' paragraph). Doc comment only; no code changed.",
+            "justification": "Both sentences stated the claim that is no longer true."
+          },
+          {
+            "kind": "other",
+            "detail": "ConnectionDialog.axaml: added TextWrapping=\"Wrap\" to PasswordLabel.",
+            "justification": "Without it the new 19-character label would be clipped in the 90px column. The code-built rows already wrap their labels the same way."
+          }
+        ],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B11",
+        "actual_files": [
+          "tests/Bearing.Cli.Tests/SearchExposureTests.cs",
+          "tests/Bearing.Cli.Tests/ConnectionListingTests.cs",
+          "docs/CLI.md"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "B11-build exit=0, 0 warnings, 0 errors"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "SearchExposureTests + ConnectionListingTests: 91 passed / 0 failed / 0 skipped; whole Bearing.Cli.Tests: 298 passed / 0 failed / 0 skipped (.mtk/evidence/20261121-171003-B11-project-39879.log)"
+        },
+        "behavioral_diff": "Nothing changed in src/. SC20 is proven by tests over the real BearingHost, the real ConnectionSessionManager and the real dialect and traits, with a fake provider/executor. Proven on both engines: (1) an exposed connection is listed as available under its engine name; tables lists indices and aliases and sends nothing; describe finds 'logs-2026.11.21' bare, quoted and padded. (2) Run and logged as successes: ES select, show tables, describe \"orders\", desc, from|limit, row a = 1, ts|limit; OS select, show tables like '%', describe tables like, source=|head, search source=, source = orders, index=|head; near-misses run (a.b, \"customer.name\", where name = '.x'); `select 1;;` runs and is sent once; a script mixing SQL and piped statements gives one result set per statement. (3) Refused, logged with Success=false and origin CLI, 0 executor calls, 0 connections opened: OS DELETE and ES `| into` get the HOST's write sentence (\"'<conn>' is exposed to external tools for reads only, so DELETE|INTO will not run...\"), not the dialect's INTO sentence; an unknown first word gets \"<conn>: 'FOO' is not a read. ... runs only <sorted allow-list> ...\" (no claim of a write); a leading `rest` gets \"'REST' is not a read\" (the allow-list runs before ExternalDeniedStatement, so the dialect's rest sentence is reached only by `| rest`); each denied pipe command gets its own sentence (COMPLETION, RERANK upper-case on ES; ml, kmeans, ad, `| rest` lower-case on OS); dot indices refused (\".security\", .kibana, .opendistro_security in SQL and PPL); one refused statement anywhere in a mixed script sends nothing. (4) query returns the first page marked truncated with no continuation call; --out (csv and xlsx) follows the cursor to the last row; --max-rows stops and says truncated; --max-rows also trims a whole ES|QL or PPL answer in query and in exports. (5) explain is refused (0 calls); as on every engine, explain refusals are not logged. (6) Forced settings reach the factory: ReadOnly true, ManualCommit false, timeout 30 when unset, an owner's 120 kept. (7) A server Notice does not appear in the JSON or --table output. ConnectionListingTests: both engines available with no host or user disclosed; OpenSearch with AwsProfile available with no profile or region disclosed; unexposed named only; a Prompt connection listed unavailable. docs/CLI.md gains a section 'Elasticsearch and OpenSearch connections' and a pointer under Commands.",
+        "deviations": [],
+        "implementer_model": "opus"
+      },
+      {
+        "batch_id": "B12",
+        "actual_files": [
+          "README.md",
+          "CLAUDE.md",
+          "AGENTS.md",
+          ".claude/rules/architecture.md",
+          ".claude/rules/data-layer.md",
+          ".claude/rules/security.md",
+          ".claude/rules/testing.md"
+        ],
+        "build": {
+          "ok": true,
+          "evidence": "B12-build exit=0, 0 warnings, 0 errors (.mtk/evidence/20261121-172126-B12-build-55578.log)"
+        },
+        "tests": {
+          "ok": true,
+          "evidence": "docs only; SC22 grep counts Elasticsearch/OpenSearch: README 14/14, CLAUDE.md 4/4, AGENTS.md 4/4, docs/CLI.md 8/10, architecture.md 1/1, data-layer.md 10/8, security.md 7/9, testing.md 1/1"
+        },
+        "behavioral_diff": "Documentation only. README: highlights bullet and an Elasticsearch and OpenSearch section, layout rows, tests paragraph. CLAUDE.md/AGENTS.md: test command, SQL intelligence, data layer, six engines. architecture.md 2.2: the two dialects, Data/Search, Data/Aws. data-layer.md: new 5.1c; 5.8 token-engine bullet names all three engines. security.md: new 1.9d; 1.9c's no-AWS-secret line scoped to DynamoDB and the editor; 1.12 Verify Full sentence reworded. testing.md 4.2: SearchTestServer and the script.",
+        "deviations": [
+          {
+            "kind": "other",
+            "detail": "security.md 1.9c first bullet now says the OpenSearch signer is the one exception (1.9d); 1.9d adds one parenthetical describing what AwsProfileCredentialSource keeps",
+            "justification": "without it 1.9c would be false; the parenthetical describes the code"
+          }
+        ],
+        "implementer_model": "opus"
+      }
+    ],
+    "manifest_amendments": [
+      {
+        "batch": "B2",
+        "path": "src/Bearing.Sql/ExternalSqlPolicy.cs",
+        "reason": "refusal wording only; what is refused is unchanged; in-package, no new contract"
+      },
+      {
+        "batch": "B10",
+        "path": "src/Bearing.Core/Data/ConnectionInfo.cs",
+        "reason": "doc comment only; found by B8"
+      },
+      {
+        "batch": "R2",
+        "path": "src/Bearing.Sessions/SshTunnels.cs",
+        "reason": "review fix R2: dead SshTunnelHandle.Route removed, Endpoint added"
+      },
+      {
+        "batch": "R2",
+        "path": "src/Bearing.App/ViewModels/ConnectionsViewModel.cs",
+        "reason": "review fix R2: SamePool compares sign-in options and credential kind for engines that declare PoolOptions"
+      },
+      {
+        "batch": "R2",
+        "path": "tests/Bearing.App.Tests/ConnectionManagementTests.cs",
+        "reason": "review fix R2: pool eviction on sign-in change"
+      },
+      {
+        "batch": "R3",
+        "path": "src/Bearing.Cli/Tools/Responses.cs",
+        "reason": "engineer approved adding a notice field to the command's output (Novadeck ask, 2026-11-21)"
+      },
+      {
+        "batch": "R3",
+        "path": "src/Bearing.Cli/Tools/CellValue.cs",
+        "reason": "engineer approved adding a notice field to the command's output (Novadeck ask, 2026-11-21)"
+      },
+      {
+        "batch": "R3",
+        "path": "src/Bearing.Cli/Tools/BearingHost.cs",
+        "reason": "engineer approved adding a notice field to the command's output (Novadeck ask, 2026-11-21)"
+      },
+      {
+        "batch": "R3",
+        "path": "src/Bearing.Cli/TextTable.cs",
+        "reason": "engineer approved adding a notice field to the command's output (Novadeck ask, 2026-11-21)"
+      },
+      {
+        "batch": "R3",
+        "path": "tests/Bearing.Cli.Tests/CliTests.cs",
+        "reason": "engineer approved adding a notice field to the command's output (Novadeck ask, 2026-11-21)"
+      }
+    ]
+  },
+  "drift": {
+    "checked": "2026-11-21",
+    "base": "origin/main",
+    "files_touched": 70,
+    "missing_after_amend": 0,
+    "extra_after_amend": 0,
+    "notes": [
+      "DynamoDbConnectionFactoryTests.cs was declared 'modify only if the extraction moves a tested member'; it did not, so the entry is removed (SC8: the DynamoDB tests pass unedited)",
+      "ExternalSqlPolicy.cs (B2) and ConnectionInfo.cs doc comment (B10) were added to the manifest as auto-fixable drift",
+      ".claude/analytics.json and .claude/observability/ are the pre-existing dirty paths (out_of_scope), working tree only, never committed",
+      "behaviour departs from the sealed spec text in decisions D1-D5 (measured in B9); reported to the engineer"
+    ]
+  },
+  "review": {
+    "stage1": {
+      "lane": "compliance",
+      "verdict": "NEEDS_CHANGES",
+      "critical": 1,
+      "warnings": 1,
+      "suggestions": 1,
+      "findings": [
+        "F001 critical: misfit exception message carries a cell-value excerpt that reaches the CLI query log (SearchValues.cs) -> fix R1.1",
+        "F002 warning: no test for the Prefer + AWS profile off-loopback refusal -> fix R1.2",
+        "F003 suggestion: sidecar SC10 wording said Message; corrected to Notice (matches the sealed spec md)"
+      ],
+      "below_threshold_acted_on": [
+        "PPL ml/kmeans/ad not flagged by the App's write guard -> fix R1.3",
+        "OpenSearch AWS note 'never stores' broader than the code -> fix R1.4"
+      ],
+      "needs_human_review": [
+        "SigV4 against real AWS is untested",
+        "TLS Require (the non-loopback default) accepts any certificate, so an AWS-profile connection signs to an unauthenticated peer unless the user picks Verify Full",
+        "PPL datasource sources (source=ds.table) not examined by the allow-list"
+      ],
+      "candidates_disposed": "53 of 53 dropped with reasons (fake test fixtures, LINQ Skip, the repo's skip-safe live-test pattern)",
+      "fix_pass": {
+        "id": "R1",
+        "fixed": [
+          "F001",
+          "F002",
+          "PPL ml/kmeans/ad widened in the write guard",
+          "OpenSearch AWS note wording"
+        ],
+        "tests": "Sql 3323/0/0, Cli 298/0/0, Data search classes incl. live 271/0/0, App filtered classes 141/0/0"
+      }
+    },
+    "stage2": {
+      "tree": "30b6576",
+      "lanes": {
+        "test-reviewer": {
+          "outcome": "NEEDS_CHANGES",
+          "critical": 1,
+          "warnings": 4,
+          "suggestions": 3,
+          "findings": [
+            "T-F001 critical: the Prefer-fallback filter is not pinned by any test",
+            "T-F002 streaming response ceiling untested (gzip/chunked)",
+            "T-F003 executor fake ignores maxResponseBytes",
+            "T-F004 TestConnection fallback failure side untested",
+            "T-F005 StreamRowsAsync multi-statement refusal untested",
+            "T-F006 test name overclaims (no 3xx)",
+            "T-F007 live VerifyFull asserts too little",
+            "T-F008 port boundary not exercised"
+          ]
+        },
+        "architecture-reviewer": {
+          "outcome": "PASS",
+          "critical": 0,
+          "warnings": 2,
+          "suggestions": 1,
+          "findings": [
+            "A-F001 SshTunnelHandle.Route is dead and dangerous",
+            "A-F002 the CLI ignores QueryResult.Notice (partial ES|QL answer)",
+            "A-F003 QueryResult.Notice doc stale"
+          ]
+        },
+        "silent-failure-hunter": {
+          "outcome": "PASS",
+          "critical": 0,
+          "warnings": 5,
+          "findings": [
+            "S-F001 401 with no credentials sent blames the credentials",
+            "S-F002 CLI drops the partial/default-limit signals",
+            "S-F003 only the first result's notice is shown",
+            "S-F004 out-of-range port silently becomes 9200",
+            "S-F005 connect timeout reported as the user's cancel"
+          ]
+        },
+        "context-miner": {
+          "outcome": "PASS",
+          "search_status": {
+            "git_log": "ran",
+            "lessons": "ran",
+            "gh": "ran"
+          },
+          "warnings": 2,
+          "suggestions": 2,
+          "findings": [
+            "C-F1 SamePool ignores CredentialKind / Authentication / Region",
+            "C-F2 CLI drops notices (same as A-F002, S-F002)",
+            "C-F3 ExternalSqlPolicy tells a sentence from a shape name by its trailing full stop",
+            "C-F4 dead SshTunnelHandle.Route (same as A-F001)"
+          ]
+        }
+      },
+      "verify_stage": "skipped: every finding is treated as raised and fixed in pass R2 (no finding was rejected), so the finding-verifier was not dispatched",
+      "fix_pass": "R2 (14 items)",
+      "waived": [
+        "C-F3 (suggestion): the trailing-full-stop convention in ExternalSqlPolicy stays; it is documented on ISqlDialect, only two dialects use it, and a typed replacement would add a public interface member - listed as a follow-up"
+      ],
+      "pending_engineer": [],
+      "needs_human_review": [
+        "TLS Prefer falls back to plain http for Basic/ApiKey credentials after a handshake failure (approved Decision 4); an on-path attacker can force that",
+        "TLS Require is the non-loopback default and accepts any certificate, also for AWS-profile sign-in",
+        "SigV4 untested against real AWS; OpenSearch Serverless and Elastic Cloud untested",
+        "PPL datasource sources not examined by the allow-list"
+      ],
+      "fix_pass_result": {
+        "id": "R2",
+        "commit": "0450e73",
+        "items": 14,
+        "tests": "Sql 3337/0/0, Cli 298/0/0, App 2982/0/24, Data 2054/0/43 (SearchLiveTests 49/0/0)",
+        "measured": "OpenSearch 3.10.0 gives no signal when plugins.query.size_limit cuts an answer (total == size == rows returned); pinned by a live test, no production change",
+        "notes": [
+          "the Prefer-filter test was confirmed to fail with the filter removed",
+          "item 4 asserts no plain-http request rather than exactly one connection: SocketsHttpHandler retries an unanswered request on new TLS connections"
+        ]
+      },
+      "r3": {
+        "id": "R3",
+        "tests": "Cli.Tests 322/0/0",
+        "note": "resolves A-F002 / S-F002 / C-F2 by the engineer's decision"
+      }
+    },
+    "fix_iterations": 2
+  }
+}
