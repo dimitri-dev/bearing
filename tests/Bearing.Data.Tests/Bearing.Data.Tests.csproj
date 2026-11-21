@@ -21,6 +21,7 @@
     <Compile Include="..\Shared\MsSqlTestServer.cs" Link="Shared\MsSqlTestServer.cs" />
     <Compile Include="..\Shared\MySqlTestServer.cs" Link="Shared\MySqlTestServer.cs" />
     <Compile Include="..\Shared\DynamoDbTestServer.cs" Link="Shared\DynamoDbTestServer.cs" />
+    <Compile Include="..\Shared\SearchTestServer.cs" Link="Shared\SearchTestServer.cs" />
   </ItemGroup>
 
   <ItemGroup>

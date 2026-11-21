@@ -3,8 +3,9 @@
 # Three legs, because the things worth checking cannot all be checked in one place:
 #
 #   * **ubuntu** provisions the real test databases and is therefore the only leg where the ~150 live
-#     Postgres tests — and the MariaDB / MySQL ones (`build/test-db-mysql.sh`) and the DynamoDB Local ones
-#     (`build/test-db-dynamodb.sh`) — actually run. It uses `build/test-db.sh` rather than a GitHub `services:` container,
+#     Postgres tests — and the MariaDB / MySQL ones (`build/test-db-mysql.sh`), the DynamoDB Local ones
+#     (`build/test-db-dynamodb.sh`) and the Elasticsearch / OpenSearch ones (`build/test-db-search.sh`) —
+#     actually run. It uses `build/test-db.sh` rather than a GitHub `services:` container,
 #     and that is the whole point: the script loads pagila *and* writes the marker row that
 #     `PgTestServer.RequireWritableAsync` checks before any test creates or drops an object. A bare service
 #     container has neither, so every catalog test would still skip — quietly, which is the state #24 exists
@@ -119,6 +120,14 @@ jobs:
       - name: Provision DynamoDB Local
         if: matrix.database
         run: ./build/test-db-dynamodb.sh
+
+      # Elasticsearch (19200) and OpenSearch (19201) with security off, plus a secured Elasticsearch (19202,
+      # HTTPS with a self-signed certificate) for the sign-in tests — SearchTestServer's defaults, so no
+      # environment variable is needed. About 2.5 GB of heap between the three; the script waits for each to
+      # report cluster health. Without them SearchLiveTests skips — and a skip is not a pass.
+      - name: Provision Elasticsearch and OpenSearch
+        if: matrix.database
+        run: ./build/test-db-search.sh
 
       # An SSH bastion in front of that MariaDB, for LiveSshTunnelTests: the host-key trust (first key pinned,
       # changed key refused, unpinned key refused without a pin callback), the refused-password prompt and a
