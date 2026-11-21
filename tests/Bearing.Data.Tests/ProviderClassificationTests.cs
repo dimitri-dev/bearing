@@ -2,6 +2,7 @@ using System;
 using Bearing.Core.Data;
 using Bearing.Data.DynamoDb;
 using Bearing.Data.Postgres;
+using Bearing.Data.Search;
 using Bearing.Data.SqlServer;
 using Xunit;
 
@@ -130,6 +131,83 @@ public class ProviderClassificationTests
         Assert.Equal(DbErrorKind.Authentication, DynamoDbErrors.Classify(wrapped));
         Assert.Equal(DbErrorKind.Unknown, DynamoDbErrors.Classify(new Exception("connection refused")));
         Assert.Equal(DbErrorKind.Canceled, DynamoDbErrors.Classify(new OperationCanceledException()));
+    }
+
+    // ---- Elasticsearch and OpenSearch: the error type the server sent, or Bearing's own code ------
+    //
+    // Through the registered providers, which delegate to SearchErrors — the one place the two engines'
+    // classification lives. The sentences and the envelope parsing are in SearchErrorsTests.
+
+    public static TheoryData<string> SearchEngines => new() { SearchProvider.ElasticsearchId, SearchProvider.OpenSearchId };
+
+    private static IDbProvider Search(string id) => new ProviderRegistry().Get(id);
+
+    private static SearchEngine EngineOf(string id)
+        => id == SearchProvider.OpenSearchId ? SearchEngine.OpenSearch : SearchEngine.Elasticsearch;
+
+    [Theory]
+    [InlineData("elasticsearch", "BearingSignIn", DbErrorKind.Authentication)]      // HTTP 401, as recorded
+    [InlineData("opensearch", "BearingSignIn", DbErrorKind.Authentication)]
+    [InlineData("elasticsearch", "BearingTimeout", DbErrorKind.Canceled)]           // our statement timeout
+    [InlineData("opensearch", "BearingTimeout", DbErrorKind.Canceled)]
+    [InlineData("elasticsearch", "BearingCanceled", DbErrorKind.Canceled)]
+    [InlineData("opensearch", "BearingCanceled", DbErrorKind.Canceled)]
+    [InlineData("elasticsearch", "parsing_exception", DbErrorKind.SyntaxOrShape)]   // Elasticsearch SQL / ES|QL parser
+    [InlineData("elasticsearch", "verification_exception", DbErrorKind.SyntaxOrShape)]
+    [InlineData("opensearch", "SyntaxCheckException", DbErrorKind.SyntaxOrShape)]   // the SQL / PPL plugin's parser
+    [InlineData("opensearch", "SemanticCheckException", DbErrorKind.SyntaxOrShape)]
+    // Good credentials, no permission: a privilege, not a credential — signing in again changes nothing.
+    [InlineData("elasticsearch", "security_exception", DbErrorKind.Unknown)]
+    [InlineData("opensearch", "security_exception", DbErrorKind.Unknown)]
+    [InlineData("elasticsearch", "28P01", DbErrorKind.Unknown)]                     // another engine's code is nothing here
+    [InlineData("opensearch", "1045", DbErrorKind.Unknown)]
+    [InlineData("elasticsearch", "", DbErrorKind.Unknown)]
+    [InlineData("opensearch", null, DbErrorKind.Unknown)]
+    public void Search_engines_classify_a_statement_by_error_type(string id, string? code, DbErrorKind expected)
+        => Assert.Equal(expected, Search(id).Classify(Error(code)));
+
+    [Theory]
+    [MemberData(nameof(SearchEngines))]
+    public void Search_engines_read_a_401_as_authentication_and_a_403_as_a_privilege(string id)
+    {
+        var provider = Search(id);
+        var forbidden = SearchErrors.ToQueryError(403, System.Text.Encoding.UTF8.GetBytes(
+            """{"error":{"type":"security_exception","reason":"action [indices:data/read/search] is unauthorized"},"status":403}"""),
+            "SQL", "SELECT 1");
+
+        Assert.Equal(DbErrorKind.Authentication, provider.ClassifyException(
+            new InvalidOperationException("Could not connect", new SearchSignInException(EngineOf(id), SearchAuthMethod.Basic, "app"))));
+        Assert.Equal(DbErrorKind.Authentication, provider.Classify(
+            SearchErrors.ToQueryError(new SearchSignInException(EngineOf(id), SearchAuthMethod.Basic, "app"), EngineOf(id), 0)));
+        Assert.Equal(DbErrorKind.Unknown, provider.Classify(forbidden));
+        Assert.Equal(DbErrorKind.Unknown, provider.ClassifyException(new SearchServerException(403, forbidden)));
+    }
+
+    [Theory]
+    [MemberData(nameof(SearchEngines))]
+    public void Search_engines_read_a_timeout_or_a_cancel_as_canceled(string id)
+    {
+        var provider = Search(id);
+        var timedOut = SearchErrors.ToQueryError(new OperationCanceledException(), EngineOf(id), timeoutSeconds: 1, timedOut: true);
+        var canceled = SearchErrors.ToQueryError(new OperationCanceledException(), EngineOf(id), timeoutSeconds: 1);
+
+        Assert.Equal(DbErrorKind.Canceled, provider.Classify(timedOut));
+        Assert.Equal(DbErrorKind.Canceled, provider.Classify(canceled));
+        Assert.Equal(DbErrorKind.Canceled, provider.ClassifyException(new OperationCanceledException()));
+        Assert.Equal(DbErrorKind.Canceled, provider.ClassifyException(new TaskCanceledException()));
+        Assert.Equal(DbErrorKind.Unknown, provider.ClassifyException(new Exception("connection refused")));
+    }
+
+    [Theory]
+    [MemberData(nameof(SearchEngines))]
+    public void Search_engines_read_a_parse_error_as_the_statements_shape(string id)
+    {
+        var provider = Search(id);
+        var parse = SearchErrors.ToQueryError(400, System.Text.Encoding.UTF8.GetBytes(
+            """{"error":{"type":"parsing_exception","reason":"line 1:8: mismatched input 'FORM'"},"status":400}"""),
+            "SQL", "SELECT FORM x");
+
+        Assert.Equal(DbErrorKind.SyntaxOrShape, provider.Classify(parse));
     }
 
     // ---- Capability flag -------------------------------------------------------------------------

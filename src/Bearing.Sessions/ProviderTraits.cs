@@ -3,6 +3,7 @@ using Bearing.Core.Data;
 using Bearing.Data.DynamoDb;
 using Bearing.Data.Postgres;
 using Bearing.Data.MySql;
+using Bearing.Data.Search;
 using Bearing.Data.SqlServer;
 using Bearing.Sql;
 
@@ -83,6 +84,16 @@ public sealed record ProviderTraits(
     /// as absent. Empty for an engine whose options bag only tunes a connection to the same server.
     /// </summary>
     public IReadOnlyList<string> NetworkOptions { get; init; } = [];
+
+    /// <summary>
+    /// The sentence the connection editor shows under the credential picker when the AWS profile kind is chosen —
+    /// what happens to the profile and to the credentials it resolves to — or null where the engine has no AWS
+    /// profile sign-in (<see cref="IDbProvider.SupportsAwsProfile"/> false). Per engine because the two engines
+    /// that have one hold the credentials differently: on DynamoDB only the AWS SDK uses them, while OpenSearch's
+    /// requests are signed by Bearing's own code with the credentials the SDK resolved, so DynamoDB's sentence
+    /// would be false there (§1.1, §1.9c).
+    /// </summary>
+    public string? AwsProfileNote { get; init; }
 
     /// <summary>PostgreSQL — the behaviour every caller had when there was one engine, so it is also the
     /// fallback below.</summary>
@@ -167,6 +178,79 @@ public sealed record ProviderTraits(
         SamplesAttributes = true,
         // An endpoint (DynamoDB Local, a VPC endpoint) replaces the region's: a different service.
         NetworkOptions = [DynamoDbConnectionFactory.EndpointOption],
+        // The connection dialog's sentence for this engine, word for word as it stood before a second engine
+        // with an AWS profile arrived.
+        AwsProfileNote = "Signs in through the AWS SDK with the profile named above (or its default credential "
+                         + "chain when blank). Bearing's own code never reads, stores or asks for an AWS secret — the "
+                         + "AWS SDK resolves the profile.",
+    };
+
+    /// <summary>The endpoint hint both search engines show: what goes in Host, and what decides the scheme.</summary>
+    private const string SearchEndpointHint =
+        "Host is a host name without a scheme (such as search.example.com): the TLS mode decides between http and "
+        + "https, and the default port is 9200.";
+
+    /// <summary>
+    /// Elasticsearch, written in Elasticsearch SQL or ES|QL (the language read from each statement's first word).
+    /// Query-only: no grid editing and no table DDL to show. Reads continue from the server's SQL cursor.
+    /// <para>
+    /// The three Entra / Azure members are placeholders and are never read, for the reason given on
+    /// <see cref="DynamoDb"/>: this engine offers neither Entra sign-in nor Browse Azure
+    /// (<see cref="IDbProvider.SupportsEntraToken"/> is false).
+    /// </para>
+    /// </summary>
+    public static ProviderTraits Elasticsearch { get; } = new(
+        SearchProvider.ElasticsearchId,
+        ElasticsearchDialect.Instance,
+        // Elasticsearch SQL's strings are '…' with '' doubled, and it has true/false — the Postgres forms.
+        SqlLiteralStyle.Postgres,
+        EntraResource: "",
+        EndpointHint: SearchEndpointHint,
+        EntraTakesUser: false,
+        AzureServers: new("", DatabasesApiVersion: ""),
+        GridEditUnavailable: "Read-only — editing isn't available on Elasticsearch connections yet.",
+        OffersTableDdl: false)
+    {
+        // Read-only is Bearing's refusal alone here (EnforcesReadOnlyOnServer false), so name what is not.
+        WriteBoundary = "On Elasticsearch the boundary is a role or API key without write privileges on the indices.",
+        ReadsContinueByToken = true,
+        SamplesAttributes = false,
+        NetworkOptions = [],
+        AwsProfileNote = null,
+    };
+
+    /// <summary>
+    /// OpenSearch, written in OpenSearch SQL or PPL (the language read from each statement's first word).
+    /// Query-only: no grid editing and no table DDL to show. Reads continue from the server's SQL cursor.
+    /// <para>
+    /// The three Entra / Azure members are placeholders and are never read, for the reason given on
+    /// <see cref="DynamoDb"/>: this engine offers neither Entra sign-in nor Browse Azure
+    /// (<see cref="IDbProvider.SupportsEntraToken"/> is false).
+    /// </para>
+    /// </summary>
+    public static ProviderTraits OpenSearch { get; } = new(
+        SearchProvider.OpenSearchId,
+        OpenSearchDialect.Instance,
+        // OpenSearch SQL's strings take backslash escapes in Bearing's own reading of them (SearchScan), as
+        // MySQL's do — so a value is written with MySQL's escaping, which doubles a backslash rather than leaving
+        // it to start an escape.
+        SqlLiteralStyle.MySql,
+        EntraResource: "",
+        EndpointHint: SearchEndpointHint,
+        EntraTakesUser: false,
+        AzureServers: new("", DatabasesApiVersion: ""),
+        GridEditUnavailable: "Read-only — editing isn't available on OpenSearch connections yet.",
+        OffersTableDdl: false)
+    {
+        // Read-only is Bearing's refusal alone here (EnforcesReadOnlyOnServer false), so name what is not.
+        WriteBoundary = "On OpenSearch the boundary is a role — or, with AWS sign-in, an IAM policy — without write "
+                        + "privileges on the indices.",
+        ReadsContinueByToken = true,
+        SamplesAttributes = false,
+        NetworkOptions = [],
+        AwsProfileNote = "Signs each request with the AWS profile named in User (the AWS SDK's default credential "
+                         + "chain when blank). The AWS SDK resolves the profile; Bearing signs with the resolved "
+                         + "credentials in memory and never stores, logs or shows them.",
     };
 
     /// <summary>
@@ -174,7 +258,7 @@ public sealed record ProviderTraits(
     /// <para>
     /// An id nothing here knows falls back to <see cref="Postgres"/> rather than throwing: these are text
     /// and copy decisions on paths that must not fail — paging a grid, rendering a preview — and Postgres
-    /// is what every one of them did before. The cost of the fallback is a wrong page suffix for a fifth
+    /// is what every one of them did before. The cost of the fallback is a wrong page suffix for a new
     /// engine that shipped a provider without adding an arm here; the cost of throwing is a crash in the
     /// results grid. Adding the arm is the fix, and <c>ProviderTraitsTests</c> asserts every registered
     /// provider has one.
@@ -193,6 +277,14 @@ public sealed record ProviderTraits(
         if (string.Equals(providerId, DynamoDb.ProviderId, StringComparison.OrdinalIgnoreCase))
         {
             return DynamoDb;
+        }
+        if (string.Equals(providerId, Elasticsearch.ProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            return Elasticsearch;
+        }
+        if (string.Equals(providerId, OpenSearch.ProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            return OpenSearch;
         }
         return Postgres;
     }

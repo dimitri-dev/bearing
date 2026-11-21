@@ -2,8 +2,10 @@
 
   <!--
     Bearing.Data: the provider abstractions' engine implementations — PostgreSQL/Npgsql (Postgres/),
-    Microsoft SQL Server/SqlClient (SqlServer/) and MySQL + MariaDB/MySqlConnector (MySql/). One folder per engine behind IDbProvider; no driver type
-    escapes this project.
+    Microsoft SQL Server/SqlClient (SqlServer/), MySQL + MariaDB/MySqlConnector (MySql/), Amazon DynamoDB/the AWS SDK
+    (DynamoDb/), and Elasticsearch + OpenSearch (Search/) over HttpClient, with no client library and no package of
+    their own. Aws/ holds what DynamoDB and OpenSearch's AWS sign-in share. One folder per engine behind IDbProvider;
+    no driver type escapes this project.
     Core only, per §2.2 — deliberately NOT Bearing.Sql. Every executor entry point that needs
     dialect-varying text takes it already built (ExecutePageAsync, CountAsync), the way the App layer
     already shaped paging before a second engine existed. That keeps one copy of each generated string, in

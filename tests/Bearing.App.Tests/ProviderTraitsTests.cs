@@ -8,6 +8,7 @@ using Bearing.Data;
 using Bearing.Data.DynamoDb;
 using Bearing.Data.MySql;
 using Bearing.Data.Postgres;
+using Bearing.Data.Search;
 using Bearing.Data.SqlServer;
 using Bearing.Results;
 using Bearing.Sessions;
@@ -34,12 +35,16 @@ public class ProviderTraitsTests
     }
 
     [Fact]
-    public void The_registry_and_the_traits_pair_all_four_engines_by_id()
+    public void The_registry_and_the_traits_pair_all_six_engines_by_id()
     {
-        // Both sides, named: the registry's four ids, and for each the arm whose dialect carries the same id.
+        // Both sides, named: the registry's six ids, and for each the arm whose dialect carries the same id.
         // A provider registered without an arm would otherwise pass the loop above only by also being missing.
         Assert.Equal(
-            new[] { PostgresProvider.ProviderId, SqlServerProvider.ProviderId, MySqlProvider.ProviderId, DynamoDbProvider.ProviderId },
+            new[]
+            {
+                PostgresProvider.ProviderId, SqlServerProvider.ProviderId, MySqlProvider.ProviderId,
+                DynamoDbProvider.ProviderId, SearchProvider.ElasticsearchId, SearchProvider.OpenSearchId,
+            },
             new ProviderRegistry().All.Select(p => p.Id));
 
         var arms = new Dictionary<string, ProviderTraits>
@@ -48,6 +53,8 @@ public class ProviderTraitsTests
             [SqlServerProvider.ProviderId] = ProviderTraits.SqlServer,
             [MySqlProvider.ProviderId] = ProviderTraits.MySql,
             [DynamoDbProvider.ProviderId] = ProviderTraits.DynamoDb,
+            [SearchProvider.ElasticsearchId] = ProviderTraits.Elasticsearch,
+            [SearchProvider.OpenSearchId] = ProviderTraits.OpenSearch,
         };
         foreach (var (id, arm) in arms)
         {
@@ -63,6 +70,62 @@ public class ProviderTraitsTests
         Assert.Equal(SqlServerProvider.ProviderId, ProviderTraits.SqlServer.Dialect.Id);
         Assert.Equal(MySqlProvider.ProviderId, ProviderTraits.MySql.Dialect.Id);
         Assert.Equal(DynamoDbProvider.ProviderId, ProviderTraits.DynamoDb.Dialect.Id);
+        Assert.Equal(SearchProvider.ElasticsearchId, ProviderTraits.Elasticsearch.Dialect.Id);
+        Assert.Equal(SearchProvider.OpenSearchId, ProviderTraits.OpenSearch.Dialect.Id);
+    }
+
+    [Theory]
+    [InlineData("elasticsearch")]
+    [InlineData("Elasticsearch")]
+    [InlineData("ELASTICSEARCH")]
+    public void An_elasticsearch_connection_writes_elasticsearch_text_never_postgres(string id)
+    {
+        var traits = ProviderTraits.For(id);
+
+        Assert.Same(ProviderTraits.Elasticsearch, traits);
+        Assert.Same(ElasticsearchDialect.Instance, traits.Dialect);
+        Assert.NotSame(PostgresDialect.Instance, traits.Dialect);
+        // Elasticsearch SQL's strings are the Postgres form: '…' with '' doubled.
+        Assert.Equal(SqlLiteralStyle.Postgres, traits.Literals);
+        Assert.Equal("Read-only — editing isn't available on Elasticsearch connections yet.", traits.GridEditUnavailable);
+        Assert.False(traits.OffersTableDdl);
+    }
+
+    [Theory]
+    [InlineData("opensearch")]
+    [InlineData("OpenSearch")]
+    [InlineData("OPENSEARCH")]
+    public void An_opensearch_connection_writes_opensearch_text_never_postgres(string id)
+    {
+        var traits = ProviderTraits.For(id);
+
+        Assert.Same(ProviderTraits.OpenSearch, traits);
+        Assert.Same(OpenSearchDialect.Instance, traits.Dialect);
+        Assert.NotSame(PostgresDialect.Instance, traits.Dialect);
+        // Backslash escapes in strings, as MySQL's.
+        Assert.Equal(SqlLiteralStyle.MySql, traits.Literals);
+        Assert.Equal("Read-only — editing isn't available on OpenSearch connections yet.", traits.GridEditUnavailable);
+        Assert.False(traits.OffersTableDdl);
+    }
+
+    [Theory]
+    [InlineData("elasticsearch")]
+    [InlineData("opensearch")]
+    public void The_search_engines_share_one_endpoint_hint_and_carry_no_entra_or_azure_audience(string id)
+    {
+        var traits = ProviderTraits.For(id);
+
+        // One sentence: what goes in Host, what decides the scheme, and the default port.
+        Assert.Equal(
+            "Host is a host name without a scheme (such as search.example.com): the TLS mode decides between http "
+            + "and https, and the default port is 9200.",
+            traits.EndpointHint);
+        // Placeholders nothing reads (no Entra sign-in, no Browse Azure on these engines) — empty, so a path that
+        // did reach one fails visibly instead of minting a token for another service.
+        Assert.Equal("", traits.EntraResource);
+        Assert.False(traits.EntraTakesUser);
+        Assert.Equal("", traits.AzureServers.ResourceType);
+        Assert.Equal("", traits.AzureServers.DatabasesApiVersion);
     }
 
     [Fact]
@@ -85,12 +148,17 @@ public class ProviderTraitsTests
     }
 
     [Fact]
-    public void The_relational_engines_keep_editing_and_ddl()
+    public void The_relational_engines_keep_editing_and_ddl_and_the_others_withhold_both()
     {
         foreach (var traits in new[] { ProviderTraits.Postgres, ProviderTraits.SqlServer, ProviderTraits.MySql })
         {
             Assert.Null(traits.GridEditUnavailable);
             Assert.True(traits.OffersTableDdl);
+        }
+        foreach (var traits in new[] { ProviderTraits.DynamoDb, ProviderTraits.Elasticsearch, ProviderTraits.OpenSearch })
+        {
+            Assert.NotNull(traits.GridEditUnavailable);
+            Assert.False(traits.OffersTableDdl);
         }
     }
 
@@ -160,6 +228,8 @@ public class ProviderTraitsEditorFactsTests
     [InlineData("sqlserver", false)]
     [InlineData("mysql", false)]
     [InlineData("dynamodb", true)]
+    [InlineData("elasticsearch", false)]
+    [InlineData("opensearch", false)]
     public void Only_dynamodb_asks_the_full_scan_question(string providerId, bool asks)
         => Assert.Equal(asks, ProviderTraits.For(providerId).AsksFullScanQuestion);
 
@@ -170,8 +240,10 @@ public class ProviderTraitsEditorFactsTests
     [InlineData("sqlserver", false)]
     [InlineData("mysql", false)]
     [InlineData("dynamodb", true)]
+    [InlineData("elasticsearch", true)]
+    [InlineData("opensearch", true)]
     [InlineData("no-such-engine", false)]
-    public void Only_dynamodb_reads_continue_by_token(string providerId, bool continues)
+    public void Dynamodb_and_the_search_engines_read_continue_by_token(string providerId, bool continues)
         => Assert.Equal(continues, ProviderTraits.For(providerId).ReadsContinueByToken);
 
     /// <summary>Only an engine whose tables declare no columns beyond their keys samples on expand; every other is
@@ -181,6 +253,8 @@ public class ProviderTraitsEditorFactsTests
     [InlineData("sqlserver", false)]
     [InlineData("mysql", false)]
     [InlineData("dynamodb", true)]
+    [InlineData("elasticsearch", false)]
+    [InlineData("opensearch", false)]
     [InlineData("no-such-engine", false)]
     public void Only_dynamodb_samples_attributes(string providerId, bool samples)
         => Assert.Equal(samples, ProviderTraits.For(providerId).SamplesAttributes);
@@ -194,6 +268,8 @@ public class ProviderTraitsEditorFactsTests
         Assert.Empty(ProviderTraits.Postgres.NetworkOptions);
         Assert.Empty(ProviderTraits.SqlServer.NetworkOptions);
         Assert.Empty(ProviderTraits.MySql.NetworkOptions);
+        Assert.Empty(ProviderTraits.Elasticsearch.NetworkOptions);
+        Assert.Empty(ProviderTraits.OpenSearch.NetworkOptions);
     }
 
     [Fact]
@@ -201,12 +277,52 @@ public class ProviderTraitsEditorFactsTests
         => Assert.False(ProviderTraits.For("no-such-engine").AsksFullScanQuestion);
 
     [Fact]
-    public void Dynamodb_names_iam_as_what_stops_a_write_and_no_other_engine_carries_the_sentence()
+    public void Dynamodb_names_iam_as_what_stops_a_write_and_no_relational_engine_carries_a_sentence()
     {
         Assert.Contains("IAM policy", ProviderTraits.DynamoDb.WriteBoundary);
         Assert.Null(ProviderTraits.Postgres.WriteBoundary);
         Assert.Null(ProviderTraits.SqlServer.WriteBoundary);
         Assert.Null(ProviderTraits.MySql.WriteBoundary);
+    }
+
+    /// <summary>Read-only is Bearing's refusal alone on both search engines, so each names what does stop a write —
+    /// and never calls read-only itself a boundary (§1.9).</summary>
+    [Fact]
+    public void The_search_engines_name_a_role_key_or_policy_as_what_stops_a_write()
+    {
+        Assert.Equal(
+            "On Elasticsearch the boundary is a role or API key without write privileges on the indices.",
+            ProviderTraits.Elasticsearch.WriteBoundary);
+        Assert.Equal(
+            "On OpenSearch the boundary is a role — or, with AWS sign-in, an IAM policy — without write privileges on the indices.",
+            ProviderTraits.OpenSearch.WriteBoundary);
+        Assert.DoesNotContain("read-only", ProviderTraits.Elasticsearch.WriteBoundary!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("read-only", ProviderTraits.OpenSearch.WriteBoundary!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The AWS-profile sentence is per engine: DynamoDB's is the dialog's sentence as it stood, word for
+    /// word; OpenSearch's says Bearing signs with the credentials the SDK resolved (DynamoDB's "never reads" would be
+    /// false there); every engine without an AWS profile has none.</summary>
+    [Fact]
+    public void The_aws_profile_note_is_set_exactly_on_the_engines_with_an_aws_profile()
+    {
+        Assert.Equal(
+            "Signs in through the AWS SDK with the profile named above (or its default credential chain when blank). "
+            + "Bearing's own code never reads, stores or asks for an AWS secret — the AWS SDK resolves the profile.",
+            ProviderTraits.DynamoDb.AwsProfileNote);
+        Assert.Equal(
+            "Signs each request with the AWS profile named in User (the AWS SDK's default credential chain when blank). "
+            + "The AWS SDK resolves the profile; Bearing signs with the resolved credentials in memory and never stores, "
+            + "logs or shows them.",
+            ProviderTraits.OpenSearch.AwsProfileNote);
+        Assert.Null(ProviderTraits.Elasticsearch.AwsProfileNote);
+        Assert.Null(ProviderTraits.Postgres.AwsProfileNote);
+        Assert.Null(ProviderTraits.SqlServer.AwsProfileNote);
+        Assert.Null(ProviderTraits.MySql.AwsProfileNote);
+
+        // Exactly the providers that offer the AWS profile kind carry a note.
+        foreach (var provider in new ProviderRegistry().All)
+            Assert.Equal(provider.SupportsAwsProfile, ProviderTraits.For(provider.Id).AwsProfileNote is not null);
     }
 }
 
@@ -276,6 +392,7 @@ public class CredentialKindOptionsTests
     [InlineData("postgres")]
     [InlineData("sqlserver")]
     [InlineData("mysql")]
+    [InlineData("elasticsearch")]
     public void The_aws_profile_kind_is_offered_by_no_other_engine(string providerId)
     {
         var provider = new ProviderRegistry().All.Single(p => p.Id == providerId);
@@ -310,6 +427,18 @@ public class CredentialKindOptionsTests
             Assert.Equal(expected, CredentialKindOptions.For(provider).Select(o => o.Kind));
         }
     }
+
+    [Fact]
+    public void Opensearch_offers_both_password_kinds_and_then_the_aws_profile()
+        => Assert.Equal(
+            new[] { CredentialKind.StoredPassword, CredentialKind.Prompt, CredentialKind.AwsProfile },
+            CredentialKindOptions.For(new ProviderRegistry().Get(SearchProvider.OpenSearchId)).Select(o => o.Kind));
+
+    [Fact]
+    public void Elasticsearch_offers_the_two_password_kinds_only()
+        => Assert.Equal(
+            new[] { CredentialKind.StoredPassword, CredentialKind.Prompt },
+            CredentialKindOptions.For(new ProviderRegistry().Get(SearchProvider.ElasticsearchId)).Select(o => o.Kind));
 
     [Fact]
     public void The_aws_profile_kind_keeps_no_password()

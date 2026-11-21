@@ -2,6 +2,7 @@ using Bearing.Core.Data;
 using Bearing.Data.DynamoDb;
 using Bearing.Data.MySql;
 using Bearing.Data.Postgres;
+using Bearing.Data.Search;
 using Bearing.Data.SqlServer;
 using Bearing.Testing;
 using Xunit;
@@ -23,17 +24,35 @@ public class ProviderRegistryTests
         var all = new ProviderRegistry().All.ToList();
 
         // The order is the order the connection dialog offers them in, and PostgreSQL — the engine every
-        // existing project file names — stays first. DynamoDB, the one non-relational engine, is last.
+        // existing project file names — stays first. The non-relational engines follow the relational ones:
+        // DynamoDB, then the two search engines (SC1).
         Assert.Equal(
             new[]
             {
                 PostgresProvider.ProviderId, SqlServerProvider.ProviderId, MySqlProvider.ProviderId,
-                DynamoDbProvider.ProviderId,
+                DynamoDbProvider.ProviderId, SearchProvider.ElasticsearchId, SearchProvider.OpenSearchId,
             },
+            all.Select(p => p.Id));
+        Assert.Equal(
+            new[] { "postgres", "sqlserver", "mysql", "dynamodb", "elasticsearch", "opensearch" },
             all.Select(p => p.Id));
         Assert.Equal("Microsoft SQL Server", all[1].DisplayName);
         Assert.Equal("MySQL / MariaDB", all[2].DisplayName);
         Assert.Equal("Amazon DynamoDB", all[3].DisplayName);
+        Assert.Equal("Elasticsearch", all[4].DisplayName);
+        Assert.Equal("OpenSearch", all[5].DisplayName);
+    }
+
+    [Theory]
+    [InlineData("elasticsearch", "elasticsearch")]
+    [InlineData("Elasticsearch", "elasticsearch")]
+    [InlineData("opensearch", "opensearch")]
+    [InlineData("OpenSearch", "opensearch")]
+    public void The_search_engines_resolve_by_id_case_insensitively_each_to_its_own_provider(string asked, string id)
+    {
+        var provider = Assert.IsType<SearchProvider>(new ProviderRegistry().Get(asked));
+
+        Assert.Equal(id, provider.Id);
     }
 
     [Theory]
