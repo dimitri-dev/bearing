@@ -76,6 +76,57 @@ connection, no password and no pool. Everything is behind `IDynamoDbApi` (the th
   in `ConnectionFactoryBuilder.RouteAsync`, never routed).
   The timeout is a client-side cancel of the page read (the SQL Server arrangement, §1.9a).
 
+## §5.1c — Elasticsearch / OpenSearch (`Bearing.Data/Search`)
+Providers `elasticsearch` and `opensearch`, **query-only**, over one implementation (`SearchProvider`,
+`SearchEngine`) on plain `HttpClient` + JSON — no client library, no package. Two ids because a provider is paired
+with its dialect by id (`ProviderTraits`), and the two differ in quoting, endpoints, statement lists and sign-in.
+Measured against Elasticsearch 9.5.6 and OpenSearch 3.10.0 containers (`SearchLiveTests`). Security: §1.9d.
+- **One door:** every request (executor, reader, Test) goes through `SearchConnectionFactory.SendAsync` — scheme,
+  `Prefer`, redirects, 401 and signing live there; never hold the `HttpClient` around it. Answers cap at 64 MB.
+- **Four endpoints:** Elasticsearch SQL `/_sql`, ES|QL `/_query`, OpenSearch SQL `/_plugins/_sql`, PPL
+  `/_plugins/_ppl`. One statement per request, no trailing `;` (Elasticsearch answers 400 to one); a batch stops
+  at its first failure; a bare `;` sends nothing but keeps its `StatementIndex`.
+- **Language per statement, from its first word** (no tab mode): an unknown first word is piped when it has a
+  top-level `|`, else SQL. Decided in `SearchScan` (`Sql`) **and** `SearchBatch` (`Data` may not reference `Sql`)
+  — **two copies kept equal by `SearchScanParityTests`; change them together.** Block comments nest in
+  Elasticsearch SQL and ES|QL, not in OpenSearch SQL or PPL (measured).
+- **Paging is the server's SQL cursor**, in `QueryResult.Continuation` (`SearchContinuation`: engine, cursor, column
+  layout — never the statement). Continuing sends **only the cursor**, to the endpoint that issued it; a rejected
+  cursor is `CursorRejectedSentence`, nothing re-run. Elasticsearch asks `page_timeout` 5 m and pages every SQL
+  shape. OpenSearch's cursor lifetime is a cluster setting (`plugins.sql.cursor.keep_alive`), and `fetch_size` is
+  sent **only for a plain select** (`SearchBatch.IsPlainSelect`) — with it, other shapes go to the legacy engine,
+  which mislabels types — so any other shape arrives whole, capped by `plugins.query.size_limit`, with no cursor
+  and no Bearing notice. ES|QL, PPL and cursor-less answers are returned **whole**, `Truncated` false: `MaxRows`
+  is not applied (cutting would hide rows nothing can fetch again); a host that must cap trims and says so
+  (`BearingHost.Capped`). Count is never offered.
+- **`QueryResult.Notice`, not `Message`:** the server's warnings (headers and body, each cut at 500 chars) go to
+  `Notice`, which the App's status line appends. `Message` stays null on every result with columns — on a
+  continuing result both hosts read it as the request-budget note. An ES|QL answer with `is_partial: true` leads
+  its `Notice` with `PartialAnswerSentence`; SQL and PPL answers are not read for `is_partial`. An error leads
+  with its language (`ES|QL: …`), its `line:col` is the position, and the server's root cause is appended when it
+  differs from the reason.
+- **Values:** integers → `long`, `unsigned_long` → `decimal`, floats → `double`, `boolean`, text-likes (`keyword`,
+  `text`, `ip`, `version`, `date_nanos`, …) → text, `binary` → bytes, `date`/`datetime`/`timestamp` → `DateTime`
+  Utc (`DateOnly` when the first page holds dates only), `time` → `TimeOnly`; objects, arrays, geo, unknown → JSON
+  text. **The first page fixes each column** (a misfit there makes it text); a later misfit **fails that page
+  naming the column** — nothing altered or dropped. `field_multi_value_leniency` is never sent (it would pick one
+  value of an array silently); Elasticsearch SQL's own array refusal is shown as it is.
+- **Metadata:** one database named after the host, one schema `""`. `GET` `_cat/indices` (open only), `_alias`,
+  `_data_stream` (400/404/405 = none), then `/*/_mapping` (64 MB ceiling; a stream takes its newest backing
+  index's mapping). Indices and streams are tables, an alias is a view (Show definition = comment lines naming
+  its targets). Dot-named indices, hidden/system streams and hidden aliases are **never listed** (still queryable
+  by name). Columns = mapped fields flattened to dotted names (multi-fields included), no keys. Ids derived as
+  MySQL's (`StableId`). Sizes from `store.size` / `docs.count`; a missing size gives no entry.
+- **Quoting (measured):** Elasticsearch quotes any name that is not a plain lower-case word, or is a keyword, **whole**
+  (`"user.name"`, `"logs-2026.11.21"` — a bare dotted or dashed index is a parse error; never per segment).
+  OpenSearch leaves a dotted path of plain words bare and backticks the rest.
+- **Withheld, each answering "no":** grid editing, manual commit and transactions, count and offset paging, query
+  plans, the Activity panel, session time zone, `:name` variables and `@set` (a run with parameters sends
+  nothing), Format SQL, table DDL, attribute samples. The timeout is a client-side cancel of the request (§1.9a).
+  SQL statements complete through a borrowed rule set (Postgres on Elasticsearch, MySQL on OpenSearch); nothing
+  completes inside ES|QL or PPL (`CompletesAt`). Toggle-comment writes `--`, which ES|QL and PPL don't read
+  (known limitation).
+
 ## §5.2 — SQLite (`Bearing.Persistence`)
 Best-effort: persistence failures must never crash the app — surface in the status bar, swallow on
 shutdown/save. Pruning uses `julianday()` + FTS `'rebuild'`.
@@ -153,8 +204,9 @@ functions, decide what absence means before `GetInt64` does.
   stamp) and settles `StatementIndex`/`ExecutedSql`/messages at completion. An error part-way keeps earlier sets
   (streaming only; `ExecuteAsync` still reports the failure alone). Esc/error mark the set being read cut short.
 - A cancelled streamed batch is still logged (unsuccessful): what it ran before Esc reached the server (§1.6).
-- **Except an engine whose reads continue by token** (`ProviderTraits.ReadsContinueByToken` — DynamoDB): its batch
-  takes the lone-statement path (first page per set, `MaxRows = ResultPageSize`), and each set pages from its own
-  `Continuation` (`BuildOne`: `pageable || Continuation is not null`). Read to the ceiling, an unfiltered scan in a
-  batch would run far past the one page §1.9c lets it run unasked, and a set the request budget cut would lose its
-  token. `HasMore = Continuation is not null || Truncated`.
+- **Except an engine whose reads continue by token** (`ProviderTraits.ReadsContinueByToken` — DynamoDB,
+  Elasticsearch, OpenSearch): its batch takes the lone-statement path (first page per set, `MaxRows =
+  ResultPageSize`), and each set pages from its own `Continuation` (`BuildOne`: `pageable || Continuation is not
+  null`). Read to the ceiling, an unfiltered scan in a batch would run far past the one page §1.9c lets it run
+  unasked, and a set the request budget cut would lose its token; a search engine's SQL set keeps its cursor the
+  same way (§5.1c). `HasMore = Continuation is not null || Truncated`.

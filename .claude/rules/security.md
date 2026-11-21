@@ -132,7 +132,8 @@ holds before selecting `*` or an options bag.
   name scan. `SqlLiteralStyle.MySql` escapes backslashes.
 
 ### §1.9c — DynamoDB
-- **No Bearing code reads, stores, prompts for or logs an AWS secret** (§1.1). `CredentialKind.AwsProfile`: the
+- **No Bearing code reads, stores, prompts for or logs an AWS secret** (§1.1) — on DynamoDB and in the editor;
+  OpenSearch's signer is the one exception (§1.9d). `CredentialKind.AwsProfile`: the
   resolver returns a credential with a null secret, nothing touches `ISecretStore`, the user is never prompted, and no
   Bearing code calls `GetCredentials`. **The AWS SDK does read the profile in Bearing's process**: a named profile when
   the factory builds the client (`CredentialProfileStoreChain` opens the config *and* credentials files, and a
@@ -183,6 +184,45 @@ holds before selecting `*` or an options bag.
   `NetSDKCredentialsFile`): they read `~/.aws/credentials` into Bearing's memory just to fill a list. (Connecting with
   a named profile does have the SDK read it — the line is the editor, not the process.) A profile only in the
   credentials file is not listed and stays typeable. Regions come from the SDK's built-in table (`AwsRegions`), no file or network.
+
+### §1.9d — Elasticsearch / OpenSearch
+- **Transport is the typed `TlsMode`** (§1.4): `Disable` http; `Require` https accepting any certificate — **never
+  call it verified**; `VerifyCa` trusted chain, host name unchecked; `VerifyFull` the platform's validation.
+  `Prefer` is https under Require's rule and falls back to http **only on a TLS handshake failure** (not a refusal,
+  timeout, HTTP error or certificate), settled by the first answered request. OS trust store only. **Redirects are
+  never followed** (a 3xx is an error that says so). Through an SSH tunnel the socket dials the loopback end but the
+  request names the **real host** — certificate, SNI, `Host` and signature are the real server's
+  (`IDbProvider.CreateConnectionFactory(…, TunnelEndpoint)`).
+- **Sign-in is chosen by the credential kind and the Authentication field, never by whether a secret is present**
+  (the dialog's Test hands over the password box whatever the kind): Basic; `Authorization: ApiKey <secret>` with no
+  user (Elasticsearch, Authentication "API key"); no header when user and secret are both blank; `AwsProfile` is
+  never Basic or ApiKey. The API key and the password live in `ISecretStore` like any password (§1.1). 401 is
+  `Authentication`; 403 is a privilege. Error text goes through `SearchErrors.Scrub` (`Authorization` values,
+  tokens, `api_key=`/`password=`, URL user-info, SigV4 `Credential=`/`Signature=`, then DynamoDB's scrub).
+- **AWS profile on OpenSearch (user decision 2026-11-21): Bearing's signer asks the AWS SDK for the resolved
+  credentials on every request and signs with them in memory; they are never stored in a Bearing field, logged,
+  shown or put in a message; sign-in errors are built from the profile name alone. This is the one place Bearing
+  code holds an AWS secret — §1.9c's "no Bearing code calls `GetCredentials`" stays true for DynamoDB and for the
+  editor.** (`AwsProfileCredentialSource` keeps the SDK's own credentials object; the keys it hands out live for one
+  request in `AwsSigV4SearchAuth`.) Service `aoss` for a `.aoss.` / `.aoss-fips.` host, else `es`; region from
+  `Options["Region"]`, else the host name, else the connect is refused. **No signed request over plain http off
+  loopback** — `Disable`, or `Prefer` falling back, is refused for a non-loopback host before any http request.
+- **Read-only is client-side only** (`EnforcesReadOnlyOnServer` false, §1.9a): `WriteRefusal` is Bearing's whole
+  guarantee; the boundary is a role or API key (Elasticsearch), a role or IAM policy (OpenSearch) without write
+  privileges (`ProviderTraits.WriteBoundary`). The write guard (`SearchScan.Describe`, each statement in its own
+  language) flags OpenSearch `DELETE`, an ES|QL `INTO` and **any first word that is not a known read** — widening
+  only (§1.2). A statement with no code (a bare `;`) is not described.
+- **The `bearing` command:** allow-lists Elasticsearch `SELECT SHOW DESCRIBE DESC FROM ROW TS`, OpenSearch `SELECT
+  SHOW DESCRIBE SEARCH SOURCE INDEX`. Refused by name on top (`ExternalDeniedStatement`): ES|QL `COMPLETION`,
+  `RERANK` (inference) and `INTO`; PPL `ml`, `kmeans`, `ad` and `rest` (also as a first word); any index name
+  starting with `.` (bare, quoted or backticked; a string only where it names the source). Accident prevention, not
+  a boundary (§1.11b). A dialect's own refusal sentence (one ending in `.`) is returned as written by
+  `ExternalSqlPolicy`, never wrapped in the credentials sentence. `explain` is refused.
+- The continuation (cursor + column layout) is memory-only — never logged, persisted or shown (§1.3). Query-log
+  redaction reads each statement in its own language (`SearchScan.RedactLiterals`: an ES|QL `"x"` is a string, an
+  Elasticsearch SQL `"x"` a name).
+- **Not verified against a real AWS domain, OpenSearch Serverless or Elastic Cloud** — SigV4 is tested against AWS's
+  published vectors and loopback round trips; live tests run on Elasticsearch 9.5.6 / OpenSearch 3.10.0 containers.
 
 ## §1.10 — Manual commit (#131)
 `ConnectionInfo.ManualCommit`: a **write** opens a transaction held until Commit/Rollback. `CommitPolicy`;
@@ -327,5 +367,6 @@ a host) and logs in on a session of its own with the typed secret.
   is never handed out. `TunnelLost` fires only when that session was the one evicted, never against a replacement. Live test kills the bastion's `sshd-session`s.
 - Forward binds `127.0.0.1` only. Pin is not part of `SameRoute` / `SameConnection` / `SameNetwork`.
 - Not supported (stated in the dialog): ssh-agent, `~/.ssh/config`, ProxyJump. Verify Full TLS through a tunnel
-  checks `127.0.0.1`. Live tests: `./build/test-ssh.sh` (bastion → MariaDB, image pinned, run in CI's ubuntu leg),
-  `LiveSshTunnelTests`.
+  checks `127.0.0.1` on the engines that receive the rewritten host; Elasticsearch and OpenSearch keep the real
+  host and check it (§1.9d). Live tests: `./build/test-ssh.sh` (bastion → MariaDB, image pinned, run in CI's
+  ubuntu leg), `LiveSshTunnelTests`.

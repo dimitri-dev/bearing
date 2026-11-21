@@ -6,7 +6,7 @@
 
 ## What this is
 
-Bearing is a cross-platform **Avalonia 12.1 desktop** SQL query tool & script manager for PostgreSQL, SQL Server, MySQL/MariaDB and Amazon DynamoDB
+Bearing is a cross-platform **Avalonia 12.1 desktop** SQL query tool & script manager for PostgreSQL, SQL Server, MySQL/MariaDB, Amazon DynamoDB, Elasticsearch and OpenSearch
 (.NET 10). Layered solution:
 
 ```
@@ -20,14 +20,14 @@ Bearing.Desktop     thin entry point
 ```
 
 - **UI:** Avalonia + AvaloniaEdit + Avalonia DataGrid; MVVM via CommunityToolkit.Mvvm.
-- **Data:** raw ADO.NET — Npgsql (Postgres), Microsoft.Data.SqlClient (SQL Server), MySqlConnector (MySQL/MariaDB), the AWS SDK for .NET (Amazon DynamoDB, PartiQL `ExecuteStatement`) + Microsoft.Data.Sqlite (local). **No ORM, no MediatR.**
-- **SQL intelligence:** ANTLR4 grammars + antlr4-c3 (`Bearing.Sql`). DynamoDB's PartiQL (`PartiQlDialect`) has no grammar of its own: it is read with the PostgreSQL lexer and completes through the PostgreSQL rule set.
+- **Data:** raw ADO.NET — Npgsql (Postgres), Microsoft.Data.SqlClient (SQL Server), MySqlConnector (MySQL/MariaDB), the AWS SDK for .NET (Amazon DynamoDB, PartiQL `ExecuteStatement`), plain `HttpClient` + JSON with no client package (Elasticsearch and OpenSearch, query-only: no grid editing, transactions, plans or Activity panel) + Microsoft.Data.Sqlite (local). **No ORM, no MediatR.**
+- **SQL intelligence:** ANTLR4 grammars + antlr4-c3 (`Bearing.Sql`). DynamoDB's PartiQL (`PartiQlDialect`) has no grammar of its own: it is read with the PostgreSQL lexer and completes through the PostgreSQL rule set. Elasticsearch and OpenSearch have no grammar either: the hand-written `SearchScan` reads Elasticsearch SQL, ES|QL, OpenSearch SQL and PPL, choosing the language per statement from its first word; a SQL statement completes through a borrowed rule set (PostgreSQL's on Elasticsearch, MySQL's on OpenSearch), and nothing completes inside ES|QL or PPL.
 - **DI:** manual composition root in `src/Bearing.App/App.axaml.cs` (no container).
 
 ## Build / test
 
 - Build: `dotnet build`
-- Test: `dotnet test` (live database tests skip cleanly with no DB, and a skip is not a pass; `./build/test-db.sh` provisions Postgres on 55434 and then they run live with no env vars. Siblings: `./build/test-db-mssql.sh`, `./build/test-db-mysql.sh`, `./build/test-db-dynamodb.sh` — DynamoDB Local on 18000)
+- Test: `dotnet test` (live database tests skip cleanly with no DB, and a skip is not a pass; `./build/test-db.sh` provisions Postgres on 55434 and then they run live with no env vars. Siblings: `./build/test-db-mssql.sh`, `./build/test-db-mysql.sh`, `./build/test-db-dynamodb.sh` — DynamoDB Local on 18000, `./build/test-db-search.sh` — Elasticsearch on 19200 and 19202 (secured), OpenSearch on 19201)
 - Format: `dotnet format --verbosity quiet`
 
 ## Critical rules

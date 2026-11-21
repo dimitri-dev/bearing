@@ -21,6 +21,8 @@ Built with .NET 10 and [Avalonia](https://avaloniaui.net/) (cross-platform deskt
 - **Customizable keybindings** and a command palette (`Ctrl+Shift+P`).
 - **Amazon DynamoDB, read through PartiQL** — a fourth engine beside PostgreSQL, SQL Server and MySQL/MariaDB.
   See [Amazon DynamoDB](#amazon-dynamodb).
+- **Elasticsearch and OpenSearch, query-only** — the fifth and sixth engines, each in its two languages:
+  Elasticsearch SQL and ES|QL, OpenSearch SQL and PPL. See [Elasticsearch and OpenSearch](#elasticsearch-and-opensearch).
 
 ## Amazon DynamoDB
 
@@ -41,6 +43,33 @@ items and lists the other attributes it found, marked *sampled* — other items 
 
 The `bearing` command reads DynamoDB too, for keyed `SELECT`s only — see [docs/CLI.md](docs/CLI.md).
 
+## Elasticsearch and OpenSearch
+
+Connections of type **Elasticsearch** or **OpenSearch** are query-only: browse indices, aliases and data streams
+with their mapped fields, and run statements in the engine's two languages. Bearing talks to both over plain HTTP
+and JSON — no client library.
+
+| | |
+|---|---|
+| **Connect** | *Host* (a name without a scheme) and *Port* (default 9200); the TLS mode decides between `https://` and `http://`. *Disable* is plain HTTP; *Require* encrypts but accepts any certificate, so it is not verified; *Verify CA* checks the chain against the system's trust store, *Verify Full* the host name too; *Prefer* tries HTTPS and falls back to HTTP only when the TLS handshake itself fails. Redirects are never followed. An SSH tunnel works, and the request still names the real host, so a certificate is checked against that name. |
+| **Sign-in** | User and password (HTTP Basic), or on Elasticsearch an **API key** (*Authentication*: API key — the password box then takes the encoded key). Both are kept in the OS credential store like any password. A blank user and password send no credentials, for a cluster with security off. On OpenSearch an **AWS profile** signs every request with SigV4: *User* is the profile name (blank uses the AWS SDK's default chain), and the region comes from *AWS region* or an `amazonaws.com` / `on.aws` host name. The AWS SDK resolves the profile; Bearing's signer asks it for the credentials on each request and signs with them in memory, never storing, logging or showing them. A signed request is never sent over plain HTTP to a host other than this machine. |
+| **Query** | The language is read from each statement's first word — **Elasticsearch SQL** or **ES\|QL** on Elasticsearch, **OpenSearch SQL** or **PPL** on OpenSearch — so one script can mix them, and each statement comes back as its own result. A server error says which language the statement was sent as. |
+| **Paging** | A SQL result is read a page at a time from the server's cursor: **Load more** / **Fetch all** send the cursor alone, never the statement again. Elasticsearch keeps a cursor for 5 minutes between pages; OpenSearch for as long as the cluster's `plugins.sql.cursor.keep_alive` says. OpenSearch pages a plain `SELECT` only — any other shape (an aggregate, a `LIMIT`, a `DISTINCT`) comes back whole, up to the cluster's `plugins.query.size_limit`. ES\|QL and PPL have no paging: every row the server returned is shown (ES\|QL adds `LIMIT 1000` to a statement without one). A warning the server sends with a result — such as that default limit, or an ES\|QL answer marked partial — is shown in the status line. |
+| **Values** | Numbers, booleans, text, bytes and dates (shown in the display zone, like `timestamptz`) as such; objects, arrays and geo values as JSON text. A value is never altered to fit its column: one that does not fit on a later page fails that page, naming the column. |
+| **Read-only** | Refused by Bearing before the statement is sent. Neither engine has a read-only session, so what stops a write at the server is a role or API key — or, with AWS sign-in, an IAM policy — without write privileges. A statement whose first word is not a known read is treated as a possible write. |
+| **Not available** | Grid editing, manual commit, query plans, the activity panel, SQL formatting, `:name` variables and `@set`, row counts, table DDL and the session-time-zone setting. Completion offers index and field names in SQL statements only — nothing inside ES\|QL or PPL — and its keywords are PostgreSQL's (Elasticsearch) or MySQL's (OpenSearch). *Toggle comment* writes `--`, which ES\|QL and PPL do not read as a comment. |
+
+The tree shows one database named after the host: indices and data streams as tables, aliases as views (*Show
+definition* lists the indices behind one), and each one's mapped fields with dotted names (`user.name`,
+`title.keyword`). Indices whose names begin with `.` — hidden and system indices, data-stream backing indices —
+are not listed, but can still be queried by name. Elasticsearch needs a name with a dot or a dash quoted whole
+(`"logs-2026.11.21"`, `"user.name"`), and Bearing writes it so; OpenSearch reads dotted names bare.
+
+Tested against Elasticsearch 9.5.6 and OpenSearch 3.10.0 running in containers. **Not tested** against an Amazon
+OpenSearch Service domain, OpenSearch Serverless or Elastic Cloud.
+
+The `bearing` command reads both, for reads only — see [docs/CLI.md](docs/CLI.md).
+
 ## Project layout
 
 The solution (`Bearing.slnx`) is layered so the SQL engine is testable in isolation from the UI:
@@ -48,8 +77,8 @@ The solution (`Bearing.slnx`) is layered so the SQL engine is testable in isolat
 | Project | Responsibility | External deps |
 |---|---|---|
 | `Bearing.Core` | Domain vocabulary + provider/persistence interfaces | none |
-| `Bearing.Sql` | SQL parsing + completion (ANTLR grammar, antlr4-c3, DML generation) | ANTLR runtime |
-| `Bearing.Data` | Implementations of the provider interfaces: PostgreSQL, SQL Server, MySQL/MariaDB and Amazon DynamoDB | Npgsql, Microsoft.Data.SqlClient, MySqlConnector, AWS SDK for .NET |
+| `Bearing.Sql` | SQL parsing + completion (ANTLR grammar, antlr4-c3, DML generation; a hand-written scanner for the Elasticsearch and OpenSearch languages) | ANTLR runtime |
+| `Bearing.Data` | Implementations of the provider interfaces: PostgreSQL, SQL Server, MySQL/MariaDB, Amazon DynamoDB, Elasticsearch and OpenSearch (the last two over plain HTTP) | Npgsql, Microsoft.Data.SqlClient, MySqlConnector, AWS SDK for .NET |
 | `Bearing.Persistence` | Project files, session state, query log (SQLite), secret store | Microsoft.Data.Sqlite |
 | `Bearing.Updates` | Release feed + self-update (installers, delta updates) | Velopack |
 | `Bearing.App` | Avalonia UI — views, view models, input pipeline | Avalonia |
@@ -119,8 +148,10 @@ somewhere else.
 The other engines' live suites skip the same way and have a script each: `./build/test-db-mssql.sh` (SQL
 Server), `./build/test-db-mysql.sh` (MariaDB and MySQL) and `./build/test-db-dynamodb.sh` (DynamoDB Local, the
 `bearing-dynamodb-test` container from `amazon/dynamodb-local` on **18000**, in memory, with no credentials to
-set up). `BEARING_TEST_DYNAMODB_ENDPOINT` points the DynamoDB tests somewhere else. A skip is not a pass — run
-the containers before trusting a green run.
+set up) and `./build/test-db-search.sh` (Elasticsearch on **19200** and OpenSearch on **19201**, security off, plus
+a secured Elasticsearch on **19202** for the sign-in tests). `BEARING_TEST_DYNAMODB_ENDPOINT` points the DynamoDB
+tests somewhere else, and `BEARING_TEST_ELASTICSEARCH_ENDPOINT` / `BEARING_TEST_OPENSEARCH_ENDPOINT` the search
+ones. A skip is not a pass — run the containers before trusting a green run.
 
 The default password is `squirrel` — a throwaway dev credential for the local test container, nothing to do
 with the app. Override it, and every other default, with `BEARING_TEST_PG_*` (`tests/Shared/PgTestServer.cs`).

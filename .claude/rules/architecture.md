@@ -15,7 +15,7 @@ Layered clean architecture. Reference: `.claude/references/architecture-principl
 Core  ←  Sql, Data, Persistence, Updates  ←  Sessions  ←  Results  ←  App  ←  Desktop
                                                                     ↖  Cli   (the `bearing` command)
 ```
-- `Sql` (SQL parsing/completion; one dialect per engine — `PostgresDialect`, `SqlServerDialect`, `MySqlDialect` and `PartiQlDialect`, which has no grammar and reads PartiQL with the PostgreSQL lexer), `Data` (Postgres/Npgsql, SQL Server, MySQL/MariaDB, `Data/DynamoDb` over the AWS SDK), `Persistence` (SQLite), `Updates`
+- `Sql` (SQL parsing/completion; one dialect per engine — `PostgresDialect`, `SqlServerDialect`, `MySqlDialect`, `PartiQlDialect`, which has no grammar and reads PartiQL with the PostgreSQL lexer, and `ElasticsearchDialect` / `OpenSearchDialect`, which have none either and read their four languages with the hand-written `SearchScan`), `Data` (Postgres/Npgsql, SQL Server, MySQL/MariaDB, `Data/DynamoDb` over the AWS SDK, `Data/Search` — Elasticsearch and OpenSearch over plain `HttpClient` — and `Data/Aws`, the profile lookup DynamoDB and OpenSearch share), `Persistence` (SQLite), `Updates`
   (Velopack release feed / self-update) each depend on `Core` only.
 - `Sessions` depends on `Core`, `Sql` and `Data` — see §2.6.
 - `Results` depends on those plus `Sessions` — see §2.7.

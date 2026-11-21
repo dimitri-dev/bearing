@@ -20,8 +20,16 @@ Supplement: `.claude/references/dotnet/testing-supplement.md`.
   `BEARING_TEST_DYNAMODB_IMAGE`). In memory, and no credential to set: a loopback endpoint with a blank profile signs
   with placeholder keys. Fixture tables are made through the SDK's own client, not the provider under test, each with a
   unique name and dropped when the test is done (§4.7).
+- Elasticsearch / OpenSearch: `SearchTestServer` (`tests/Shared/SearchTestServer.cs`), three containers from
+  `./build/test-db-search.sh` — `bearing-elasticsearch-test` on 19200 and `bearing-opensearch-test` on 19201
+  (security off, plain HTTP), `bearing-elasticsearch-secure-test` on 19202 (HTTPS with a certificate from its own
+  CA, user `elastic`: TLS mode Require; Verify Full refuses it). Overrides `BEARING_TEST_ELASTICSEARCH_ENDPOINT`,
+  `BEARING_TEST_OPENSEARCH_ENDPOINT`, `BEARING_TEST_ELASTICSEARCH_SECURE_ENDPOINT` / `_SECURE_PASSWORD`; images
+  `BEARING_TEST_{ELASTICSEARCH,OPENSEARCH}_IMAGE`. None on 9200 (a developer's own cluster may be there). Every
+  live test is a theory over **both** engines where both have the behaviour; fixtures (indices, aliases, streams,
+  API keys) are uniquely named and removed when the test is done (`SearchFixtures`).
 - Never a plain `[Fact]` that fails without a DB; never a `catch { return false; }` probe.
-- Containers: `./build/test-db.sh`, `./build/test-db-mssql.sh`, `./build/test-db-mysql.sh` (starts both), `./build/test-db-dynamodb.sh`. WHEN a change touches a provider, run its
+- Containers: `./build/test-db.sh`, `./build/test-db-mssql.sh`, `./build/test-db-mysql.sh` (starts both), `./build/test-db-dynamodb.sh`, `./build/test-db-search.sh` (starts all three). WHEN a change touches a provider, run its
   container before reporting a result.
 
 ## §4.3 — UI: headless tests assert, eyeball QA confirms
