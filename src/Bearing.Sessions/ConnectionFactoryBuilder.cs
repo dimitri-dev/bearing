@@ -28,7 +28,7 @@ internal static class ConnectionFactoryBuilder
         var (target, tunnel) = await RouteAsync(credentials, provider, credential.ApplyTo(info), ct);
         try
         {
-            return (provider, provider.CreateConnectionFactory(target, credential.Secret), credential, tunnel);
+            return (provider, CreateFactory(provider, target, credential.Secret, tunnel), credential, tunnel);
         }
         catch
         {
@@ -52,7 +52,7 @@ internal static class ConnectionFactoryBuilder
         var (target, tunnel) = await RouteAsync(credentials, provider, info, ct, sshSecret);
         try
         {
-            var factory = provider.CreateConnectionFactory(target, password);
+            var factory = CreateFactory(provider, target, password, tunnel);
             try
             {
                 return await factory.TestConnectionAsync(ct);
@@ -72,12 +72,32 @@ internal static class ConnectionFactoryBuilder
     }
 
     /// <summary>
-    /// What the driver should dial: <paramref name="info"/> itself, or — for a connection with an
-    /// <see cref="ConnectionInfo.SshTunnel"/> — the same record pointed at a freshly opened tunnel's loopback
-    /// end. The caller owns the returned tunnel and disposes it after the factory built on it. Only the
-    /// factory sees the rewritten host; sessions, messages and pool identity keep the real one.
+    /// The one place a factory is created from a routed connection: without a tunnel the two-argument
+    /// overload, with one the three-argument overload handing the provider the connection <b>as it is</b> and the
+    /// tunnel's loopback end. What the provider does with the two is its own business — the default member
+    /// rewrites the host and port (what the driver of a TCP engine dials), an HTTP engine keeps the real host
+    /// for its certificate, <c>Host</c> header and signature. Only the factory sees the loopback end (§1.12).
     /// </summary>
-    internal static async Task<(ConnectionInfo Target, SshTunnelHandle? Tunnel)> RouteAsync(
+    internal static IDbConnectionFactory CreateFactory(
+        IDbProvider provider, ConnectionInfo info, string? password, SshTunnelHandle? tunnel)
+        => CreateFactory(provider, info, password, tunnel is null ? null : new TunnelEndpoint("127.0.0.1", tunnel.LocalPort));
+
+    /// <summary><see cref="CreateFactory(IDbProvider, ConnectionInfo, string?, SshTunnelHandle?)"/> for a loopback
+    /// end already in hand (null = no tunnel).</summary>
+    internal static IDbConnectionFactory CreateFactory(
+        IDbProvider provider, ConnectionInfo info, string? password, TunnelEndpoint? tunnel)
+        => tunnel is null
+            ? provider.CreateConnectionFactory(info, password)
+            : provider.CreateConnectionFactory(info, password, tunnel);
+
+    /// <summary>
+    /// The connection to build a factory from — <paramref name="info"/> itself, <b>not</b> rewritten — and, for a
+    /// connection with an <see cref="ConnectionInfo.SshTunnel"/>, a freshly opened tunnel. The caller hands both
+    /// to <see cref="CreateFactory(IDbProvider, ConnectionInfo, string?, SshTunnelHandle?)"/>, owns the tunnel
+    /// and disposes it after the factory built on it. Only the factory sees the loopback end; sessions, messages
+    /// and pool identity keep the real host.
+    /// </summary>
+    internal static async Task<(ConnectionInfo Info, SshTunnelHandle? Tunnel)> RouteAsync(
         CredentialResolver? credentials, IDbProvider provider, ConnectionInfo info, CancellationToken ct,
         string? typedSshSecret = null)
     {
@@ -100,7 +120,7 @@ internal static class ConnectionFactoryBuilder
         }
         var (host, port) = ForwardTarget(provider, info);
         var tunnel = await credentials.Ssh.OpenAsync(info, host, port, ct, typedSshSecret);
-        return (tunnel.Route(info), tunnel);
+        return (info, tunnel);
     }
 
     /// <summary>

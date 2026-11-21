@@ -81,6 +81,18 @@ public sealed record QueryResult(
     /// </para>
     /// </summary>
     public string? Continuation { get; init; }
+
+    /// <summary>
+    /// What the server said about a result that <b>has rows</b> — a warning such as a default row limit it
+    /// applied. Null when it said nothing (and, for now, whenever no provider sets it).
+    /// <para>
+    /// A member of its own because <see cref="Message"/> cannot carry it: <c>Message</c> is shown only for a
+    /// result without columns, and on a result with a <see cref="Continuation"/> both hosts read it as the
+    /// request-budget notice (<c>ContinuationPaging.BudgetNotice</c>, <c>CellValue.StoppedByBudget</c>), so a
+    /// server's sentence put there would be mistaken for one of ours.
+    /// </para>
+    /// </summary>
+    public string? Notice { get; init; }
 }
 
 /// <summary>

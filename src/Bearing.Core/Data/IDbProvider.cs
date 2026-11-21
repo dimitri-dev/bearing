@@ -117,6 +117,22 @@ public interface IDbProvider
     DbErrorKind ClassifyException(Exception exception);
 
     IDbConnectionFactory CreateConnectionFactory(ConnectionInfo info, string? password);
+
+    /// <summary>
+    /// <see cref="CreateConnectionFactory(ConnectionInfo, string?)"/> for a connection reached through an SSH
+    /// tunnel: <paramref name="info"/> is the connection <b>as saved</b> (the real host and port) and
+    /// <paramref name="tunnel"/> is the loopback end to dial.
+    /// <para>
+    /// The default points <paramref name="info"/> at <paramref name="tunnel"/> — <c>Host</c> and <c>Port</c>
+    /// replaced — and builds the factory from that, which is all a driver that opens its own TCP socket needs
+    /// (Postgres, SQL Server, MySQL). It is a member rather than a rewrite done by the caller because an engine
+    /// reached over HTTP needs <b>both</b> halves: the loopback end to connect to, and the real host name for
+    /// the certificate check, the <c>Host</c> header and request signing. Only such an engine overrides it.
+    /// </para>
+    /// </summary>
+    IDbConnectionFactory CreateConnectionFactory(ConnectionInfo info, string? password, TunnelEndpoint tunnel)
+        => CreateConnectionFactory(info with { Host = tunnel.Host, Port = tunnel.Port }, password);
+
     IMetadataReader CreateMetadataReader(IDbConnectionFactory factory);
     IQueryExecutor CreateQueryExecutor(IDbConnectionFactory factory);
 

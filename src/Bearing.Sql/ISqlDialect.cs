@@ -354,6 +354,18 @@ public interface ISqlDialect
     bool InStringLiteral(string sql, int offset);
 
     /// <summary>
+    /// Whether the completion engine should read <paramref name="sql"/> at all with the caret at
+    /// <paramref name="caret"/>. Asked next to <see cref="InStringLiteral"/>, before anything is parsed; false
+    /// gives the same empty result a caret inside a string does.
+    /// <para>
+    /// True by default — every engine whose buffer is statements the grammar reads. A dialect overrides it
+    /// where part of the buffer is not that grammar's language (a request body the grammar cannot parse), so
+    /// the engine does not offer SQL keywords there.
+    /// </para>
+    /// </summary>
+    bool CompletesAt(string sql, int caret) => true;
+
+    /// <summary>
     /// <paramref name="sql"/> with its literal <em>values</em> replaced by <c>?</c>, keeping the shape
     /// of the statement — what the query log stores when <c>QueryLogRedactLiterals</c> is on (#22, §1.3).
     /// <para>

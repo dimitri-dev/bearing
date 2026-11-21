@@ -81,6 +81,10 @@ public sealed class CompletionEngine : ICompletionEngine
         if (dialect.InStringLiteral(sql, caretOffset))
             return new CompletionResult(Array.Empty<Suggestion>(), caretOffset, 0);
 
+        // The dialect may say the caret is somewhere its grammar has no business answering (default: no).
+        if (!dialect.CompletesAt(sql, caretOffset))
+            return new CompletionResult(Array.Empty<Suggestion>(), caretOffset, 0);
+
         var parsed = rules.Parse(sql);
         parsed.Tokens.Fill();
 
@@ -223,13 +227,17 @@ public sealed class CompletionEngine : ICompletionEngine
     /// <summary>The candidate intents at the caret (exposed for pinning tests).</summary>
     public IReadOnlySet<CompletionIntent> IntentsAt(string sql, int caretOffset)
     {
-        var rules = _dialect().ParseRules;   // before the hop, as in CompleteAsync
-        return PgParsing.OnDeepStack(() => IntentsAtCore(sql, caretOffset, rules));
+        var dialect = _dialect();   // before the hop, as in CompleteAsync
+        return PgParsing.OnDeepStack(() => IntentsAtCore(sql, caretOffset, dialect));
     }
 
-    private IReadOnlySet<CompletionIntent> IntentsAtCore(string sql, int caretOffset, ISqlParseRules rules)
+    private IReadOnlySet<CompletionIntent> IntentsAtCore(string sql, int caretOffset, ISqlDialect dialect)
     {
         caretOffset = Math.Clamp(caretOffset, 0, sql.Length);
+        // This path parses on its own, so it asks what CompleteCore asks: no intents where nothing completes.
+        if (!dialect.CompletesAt(sql, caretOffset)) return new HashSet<CompletionIntent>();
+
+        var rules = dialect.ParseRules;
         var parsed = rules.Parse(sql);
         parsed.Tokens.Fill();
         if (ParseDepth.TooDeep(rules, parsed.Tokens.GetTokens())) return new HashSet<CompletionIntent>();

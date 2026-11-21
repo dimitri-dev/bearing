@@ -150,6 +150,139 @@ public class SshTunnelTests
         Assert.Contains("Amazon DynamoDB", ex.Message);
     }
 
+    private static readonly ConnectionInfo Saved = new()
+    {
+        Id = Guid.NewGuid(), Name = "search", ProviderId = "tunnelled", Host = "search.internal", Port = 9200,
+        Database = "logs", User = "reader", SshTunnel = new SshTunnel { Host = "bastion", User = "jump" },
+    };
+
+    /// <summary>An engine reached over HTTP: it overrides the three-argument overload to keep the real host
+    /// (certificate, <c>Host</c> header, signature) and dial the loopback end.</summary>
+    private sealed class HttpLikeProvider : TunnelProviderBase, IDbProvider
+    {
+        public ConnectionInfo? SeenInfo;
+        public TunnelEndpoint? SeenTunnel;
+        public int TwoArgumentCalls;
+
+        public override IDbConnectionFactory CreateConnectionFactory(ConnectionInfo info, string? password)
+        {
+            TwoArgumentCalls++;
+            SeenInfo = info;
+            return new NullFactory();
+        }
+
+        public IDbConnectionFactory CreateConnectionFactory(ConnectionInfo info, string? password, TunnelEndpoint tunnel)
+        {
+            SeenInfo = info;
+            SeenTunnel = tunnel;
+            return new NullFactory();
+        }
+    }
+
+    /// <summary>An engine that dials a host and port itself (Postgres, SQL Server, MySQL): it knows nothing of
+    /// tunnels and so inherits the default member.</summary>
+    private sealed class TcpLikeProvider : TunnelProviderBase
+    {
+        public ConnectionInfo? SeenInfo;
+        public int Calls;
+
+        public override IDbConnectionFactory CreateConnectionFactory(ConnectionInfo info, string? password)
+        {
+            Calls++;
+            SeenInfo = info;
+            return new NullFactory();
+        }
+    }
+
+    private abstract class TunnelProviderBase : IDbProvider
+    {
+        public string Id => "tunnelled";
+        public string DisplayName => "Tunnelled";
+        public IReadOnlyList<ConnectionField> ConnectionFields { get; } = Array.Empty<ConnectionField>();
+        public bool EnforcesReadOnlyOnServer => false;
+        public bool SupportsSessionTimeZone => false;
+        public bool SupportsIntegratedAuth => false;
+        public bool SupportsEntraToken => false;
+        public bool SupportsPasswordCredentials => true;
+        public bool SupportsAwsProfile => false;
+        public bool SupportsManualCommit => false;
+        public bool SupportsTlsModes => false;
+        public bool SupportsServerActivity => false;
+
+        public IServerActivity CreateServerActivity(IDbConnectionFactory factory) => throw new NotSupportedException();
+        public DbErrorKind Classify(QueryError error) => DbErrorKind.Unknown;
+        public DbErrorKind ClassifyException(Exception exception) => DbErrorKind.Unknown;
+        public abstract IDbConnectionFactory CreateConnectionFactory(ConnectionInfo info, string? password);
+        public IMetadataReader CreateMetadataReader(IDbConnectionFactory factory) => throw new NotSupportedException();
+        public IQueryExecutor CreateQueryExecutor(IDbConnectionFactory factory) => throw new NotSupportedException();
+        public ITransactionScope CreateTransactionScope(IDbConnectionFactory factory) => throw new NotSupportedException();
+    }
+
+    private sealed class NullFactory : IDbConnectionFactory
+    {
+        public Task<bool> TestConnectionAsync(System.Threading.CancellationToken ct) => Task.FromResult(true);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public void A_provider_that_overrides_the_tunnel_overload_gets_the_real_host_and_the_loopback_end()
+    {
+        var provider = new HttpLikeProvider();
+        var loopback = new TunnelEndpoint("127.0.0.1", 40123);
+
+        ConnectionFactoryBuilder.CreateFactory(provider, Saved, "pw", loopback);
+
+        Assert.Same(Saved, provider.SeenInfo);
+        Assert.Equal("search.internal", provider.SeenInfo!.Host);
+        Assert.Equal(9200, provider.SeenInfo.Port);
+        Assert.Same(loopback, provider.SeenTunnel);
+        Assert.Equal(0, provider.TwoArgumentCalls);
+    }
+
+    [Fact]
+    public void A_provider_that_does_not_override_it_is_handed_the_record_rewritten_to_the_loopback_end()
+    {
+        var provider = new TcpLikeProvider();
+
+        ConnectionFactoryBuilder.CreateFactory(provider, Saved, "pw", new TunnelEndpoint("127.0.0.1", 40123));
+
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal("127.0.0.1", provider.SeenInfo!.Host);
+        Assert.Equal(40123, provider.SeenInfo.Port);
+        // The default member changes the host and port and nothing else, as SshTunnelHandle.Route did.
+        Assert.Equal(Saved with { Host = "127.0.0.1", Port = 40123 }, provider.SeenInfo);
+        // The saved record is untouched: pool identity and messages keep the real host.
+        Assert.Equal("search.internal", Saved.Host);
+        Assert.Equal(9200, Saved.Port);
+    }
+
+    [Fact]
+    public void Without_a_tunnel_the_provider_gets_the_connection_through_the_two_argument_overload()
+    {
+        var http = new HttpLikeProvider();
+        var tcp = new TcpLikeProvider();
+
+        ConnectionFactoryBuilder.CreateFactory(http, Saved, "pw", (TunnelEndpoint?)null);
+        ConnectionFactoryBuilder.CreateFactory(tcp, Saved, "pw", (TunnelEndpoint?)null);
+
+        Assert.Equal(1, http.TwoArgumentCalls);
+        Assert.Null(http.SeenTunnel);
+        Assert.Same(Saved, http.SeenInfo);
+        Assert.Same(Saved, tcp.SeenInfo);
+    }
+
+    [Fact]
+    public async Task The_builder_still_refuses_a_missing_resolver_before_any_factory_is_made()
+    {
+        var provider = new HttpLikeProvider();
+
+        var ex = await Assert.ThrowsAsync<ConnectionFailedException>(
+            () => ConnectionFactoryBuilder.RouteAsync(null, provider, Saved, default));
+
+        Assert.Contains("needs an SSH tunnel", ex.Message);
+        Assert.Null(provider.SeenInfo);
+    }
+
     [Fact]
     public async Task A_missing_key_file_fails_as_a_connection_error_naming_the_file()
     {
