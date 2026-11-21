@@ -54,6 +54,64 @@ public class SearchErrorsTests
         Assert.Equal(DbErrorKind.SyntaxOrShape, SearchErrors.ClassifyState(error.SqlState));
     }
 
+    /// <summary>Decision D4, on the body Elasticsearch 9.5.6 sent for a closed cursor: the reason is generic, the
+    /// root cause says what failed — so it follows the reason in parentheses.</summary>
+    [Fact]
+    public void A_root_cause_that_says_more_follows_the_reason_in_parentheses()
+    {
+        var body = Utf8("""
+            {"error":{"root_cause":[{"type":"search_context_missing_exception","reason":"No search context found for id [42]"}],
+             "type":"search_phase_execution_exception","reason":"all shards failed","phase":"query"},"status":404}
+            """);
+
+        var error = SearchErrors.ToQueryError(404, body, "SQL", "SELECT 1");
+
+        Assert.Equal("SQL: all shards failed (No search context found for id [42])", error.Message);
+        Assert.Equal("search_phase_execution_exception", error.SqlState);
+    }
+
+    [Theory]
+    [InlineData("""{"error":{"type":"x","reason":"all shards failed"},"status":500}""")]
+    [InlineData("""{"error":{"root_cause":[],"type":"x","reason":"all shards failed"},"status":500}""")]
+    [InlineData("""{"error":{"root_cause":[{"type":"y","reason":"   "}],"type":"x","reason":"all shards failed"},"status":500}""")]
+    [InlineData("""{"error":{"root_cause":[{"type":"y"}],"type":"x","reason":"all shards failed"},"status":500}""")]
+    [InlineData("""{"error":{"root_cause":[{"type":"y","reason":"all shards failed"}],"type":"x","reason":"all shards failed"},"status":500}""")]
+    [InlineData("""{"error":{"root_cause":["all shards failed"],"type":"x","reason":"all shards failed"},"status":500}""")]
+    public void An_absent_blank_or_identical_root_cause_adds_nothing(string body)
+        => Assert.Equal("all shards failed", SearchErrors.ToQueryError(500, Utf8(body), null, null).Message);
+
+    [Fact]
+    public void Only_the_first_root_cause_is_shown_and_it_is_bounded_and_scrubbed()
+    {
+        var longCause = "Cause with api_key=abc123XYZabc123 " + new string('z', 1_000);
+        var body = Utf8($$"""
+            {"error":{"root_cause":[{"reason":"{{longCause}}"},{"reason":"the second one"}],
+             "type":"x","reason":"all shards failed"},"status":500}
+            """);
+
+        var message = SearchErrors.ToQueryError(500, body, null, null).Message;
+
+        Assert.StartsWith("all shards failed (Cause with ", message);
+        Assert.EndsWith("…)", message);
+        Assert.True(message.Length < "all shards failed (".Length + SearchErrors.ExcerptLength + 5);
+        Assert.DoesNotContain("the second one", message);
+        Assert.DoesNotContain("abc123XYZabc123", message);
+    }
+
+    [Fact]
+    public void A_root_cause_does_not_move_the_position_the_reason_gives()
+    {
+        var body = Utf8("""
+            {"error":{"root_cause":[{"type":"parsing_exception","reason":"line 1:3: mismatched input"}],
+             "type":"parsing_exception","reason":"line 1:8: extraneous input"},"status":400}
+            """);
+
+        var error = SearchErrors.ToQueryError(400, body, "SQL", "SELECT foo FROM bar");
+
+        Assert.Equal("SQL: line 1:8: extraneous input (line 1:3: mismatched input)", error.Message);
+        Assert.Equal(8, error.Position);
+    }
+
     [Fact]
     public void A_string_error_is_the_reason()
     {

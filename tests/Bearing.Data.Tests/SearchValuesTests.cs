@@ -20,6 +20,11 @@ public class SearchValuesTests
         { "short", "1123", typeof(long), 1123L },
         { "integer", "2147483647", typeof(long), 2147483647L },
         { "long", "9223372036854775807", typeof(long), long.MaxValue },
+        // PPL's names for the same mappings (measured live on OpenSearch 3.10, SearchLiveTests).
+        { "tinyint", "-7", typeof(long), -7L },
+        { "smallint", "1123", typeof(long), 1123L },
+        { "int", "2147483647", typeof(long), 2147483647L },
+        { "bigint", "9007199254740993", typeof(long), 9007199254740993L },
         { "unsigned_long", "18446744073709551615", typeof(decimal), 18446744073709551615m },
         { "float", "1.100000023841858", typeof(double), 1.100000023841858 },
         { "half_float", "0.5", typeof(double), 0.5 },

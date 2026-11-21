@@ -72,14 +72,34 @@ public class SearchCompletionTests
         Assert.StartsWith("`logs-2024`", Insertion(r, "logs-2024"));
     }
 
+    /// <summary>A dotted field completes quoted whole on Elasticsearch (a bare dotted index name is a parsing
+    /// error there, and the dialect cannot tell an index from a field) and bare on OpenSearch, where both forms
+    /// were measured to run.</summary>
     [Theory]
-    [MemberData(nameof(Dialects))]
-    public void Fields_complete_in_a_predicate_with_dotted_paths_bare(string id)
+    [InlineData("elasticsearch", "\"user.name\"")]
+    [InlineData("opensearch", "user.name")]
+    public void Fields_complete_in_a_predicate_with_a_dotted_path_written_the_engines_way(string id, string inserted)
     {
         var r = At(Dialect(id), "select * from logs where ");
         Assert.Contains("message", Displays(r));
         Assert.Contains("user.name", Displays(r));
-        Assert.Equal("user.name", Insertion(r, "user.name"));
+        Assert.Equal(inserted, Insertion(r, "user.name"));
+    }
+
+    [Theory]
+    [InlineData("elasticsearch", "logs-2026.11.21", "\"logs-2026.11.21\"")]
+    [InlineData("elasticsearch", "logs.archive", "\"logs.archive\"")]
+    [InlineData("opensearch", "logs-2026.11.21", "`logs-2026.11.21`")]
+    [InlineData("opensearch", "logs.archive", "logs.archive")]
+    public void A_dotted_index_completes_quoted_whole_on_elasticsearch_and_bare_dots_stay_bare_on_opensearch(
+        string id, string index, string inserted)
+    {
+        var tables = new[] { new TableInfo(41, "default", index, RelationKind.Table) };
+        var dotted = new SchemaSnapshot("localhost", new[] { "default" }, tables, [], [], searchPath: new[] { "default" });
+
+        var r = new CompletionEngine(() => Dialect(id)).Complete("select * from ", "select * from ".Length, dotted);
+
+        Assert.StartsWith(inserted, Insertion(r, index));
     }
 
     [Fact]

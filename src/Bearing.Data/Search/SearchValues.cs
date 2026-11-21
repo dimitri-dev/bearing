@@ -86,9 +86,14 @@ internal static partial class SearchValues
     /// <summary>The longest excerpt of a value quoted in a misfit message.</summary>
     internal const int ExcerptLength = 80;
 
+    /// <summary>The mapping names, and the names PPL reports for the same mappings — measured on OpenSearch 3.10
+    /// (<c>SearchLiveTests</c>): <c>byte</c>, <c>short</c>, <c>integer</c> and <c>long</c> fields are
+    /// <c>tinyint</c>, <c>smallint</c>, <c>int</c> and <c>bigint</c> in a PPL schema, while OpenSearch SQL and
+    /// both Elasticsearch languages keep the mapping's name.</summary>
     private static readonly HashSet<string> IntegerTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "byte", "short", "integer", "long",
+        "tinyint", "smallint", "int", "bigint",
     };
 
     private static readonly HashSet<string> FloatTypes = new(StringComparer.OrdinalIgnoreCase)

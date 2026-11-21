@@ -19,7 +19,10 @@ namespace Bearing.Data.Search;
 /// </para>
 /// <para>
 /// <b>Paging.</b> Only the SQL endpoints page: the first request asks for <see cref="QueryOptions.MaxRows"/> rows
-/// (clamped by <see cref="SearchProtocol.FetchSize"/>), and a <c>cursor</c> in the answer becomes the result's
+/// (clamped by <see cref="SearchProtocol.FetchSize"/>) — on OpenSearch only for a plain select
+/// (<see cref="SearchProtocol.AsksForPages"/>: there <c>fetch_size</c> hands every other shape to the legacy engine,
+/// which mislabels column types), so any other OpenSearch SQL statement is answered whole, capped by the cluster's
+/// <c>plugins.query.size_limit</c> — and a <c>cursor</c> in the answer becomes the result's
 /// <see cref="QueryResult.Continuation"/> (<see cref="SearchContinuation"/>, which holds the cursor and the column
 /// layout, never the statement). Continuing sends that cursor alone, so the statement is never run twice. ES|QL,
 /// PPL and a SQL answer without a cursor are returned <b>whole</b>: the server has no next page to offer, so
@@ -368,10 +371,33 @@ public sealed class SearchQueryExecutor : IQueryExecutor
     private QueryError CursorRejected(string cursor, SearchResponse response)
     {
         var server = SearchErrors.ToQueryError(response.StatusCode, response.Body, language: null, statement: null);
-        var reason = server.Message.Replace(cursor, "[cursor]", StringComparison.Ordinal);
+        var reason = WithoutCursor(server.Message, cursor);
 
         return new QueryError(CursorRejectedSentence(Engine, response.StatusCode, reason), server.SqlState, null);
     }
+
+    /// <summary>
+    /// <paramref name="message"/> with the cursor cut out (§1.3: a cursor is never shown) — whole, and also where a
+    /// bounded root cause (<see cref="SearchErrors.ToQueryError(int, byte[], string?, string?)"/>) was cut inside an
+    /// echoed cursor, leaving a prefix of it before the "…".
+    /// </summary>
+    internal static string WithoutCursor(string message, string cursor)
+    {
+        var text = message.Replace(cursor, "[cursor]", StringComparison.Ordinal);
+        for (var length = Math.Min(cursor.Length - 1, text.Length); length >= MinCursorFragment; length--)
+        {
+            var fragment = string.Concat(cursor.AsSpan(0, length), "…");
+            if (text.Contains(fragment, StringComparison.Ordinal))
+            {
+                return text.Replace(fragment, "[cursor]…", StringComparison.Ordinal);
+            }
+        }
+
+        return text;
+    }
+
+    /// <summary>The shortest cut-off cursor prefix <see cref="WithoutCursor"/> looks for.</summary>
+    private const int MinCursorFragment = 8;
 
     // ---- requests, timeout, errors -----------------------------------------------------------------
 

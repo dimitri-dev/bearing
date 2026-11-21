@@ -55,8 +55,8 @@ internal sealed record SearchBatchStatement(int Start, string Text, SearchLangua
 ///     rules.</item>
 ///   <item><b>Per language</b>: Elasticsearch SQL — <c>'…'</c> strings (<c>''</c>, no backslash),
 ///     <c>"…"</c> and <c>`…`</c> names, <c>--</c> and nested <c>/* */</c>. ES|QL — <c>"…"</c> strings with
-///     backslash escapes, <c>"""…"""</c> with none, <c>`…`</c> names, <c>//</c> and non-nested
-///     <c>/* */</c>; no <c>--</c>, no <c>'</c> strings. OpenSearch SQL — <c>'…'</c> and <c>"…"</c> strings
+///     backslash escapes, <c>"""…"""</c> with none, <c>`…`</c> names, <c>//</c> and nested
+///     <c>/* */</c> (measured live); no <c>--</c>, no <c>'</c> strings. OpenSearch SQL — <c>'…'</c> and <c>"…"</c> strings
 ///     (doubled quote and backslash), <c>`…`</c> names, <c>#</c>, <c>--</c> + whitespace, non-nested
 ///     <c>/* */</c>. PPL — <c>'…'</c> and <c>"…"</c> strings (backslash and doubled quote), <c>`…`</c> names,
 ///     <c>//</c> and non-nested <c>/* */</c>. An unterminated string, name or comment runs to the end.</item>
@@ -141,6 +141,101 @@ internal static class SearchBatch
         return statements;
     }
 
+    /// <inheritdoc cref="IsPlainSelect(SearchEngine, SearchLanguage, string)"/>
+    public static bool IsPlainSelect(SearchEngine engine, SearchBatchStatement statement)
+    {
+        ArgumentNullException.ThrowIfNull(statement);
+
+        return IsPlainSelect(engine, statement.Language, statement.Text);
+    }
+
+    /// <summary>
+    /// Whether a SQL statement reads as a <b>plain select</b> — the shape OpenSearch's main SQL engine pages with
+    /// a cursor. Read from its code tokens by this class's own lexer, in the statement's language (strings,
+    /// quoted names and comments do not count; words compare case-insensitively): the first word is
+    /// <c>SELECT</c>; a <c>FROM</c> stands at parenthesis depth 0; and none of these appear — the words
+    /// <c>LIMIT OFFSET GROUP HAVING JOIN UNION INTERSECT EXCEPT MINUS OVER DISTINCT</c>, a second <c>SELECT</c>
+    /// (a subquery), or an aggregate call (<see cref="AggregateFunctions"/> followed by <c>(</c>). False for a
+    /// piped statement, an empty one, and anything else.
+    /// <para>
+    /// Why it matters (measured against OpenSearch 3.10.0, <c>SearchLiveTests</c>): with <c>fetch_size</c> in the
+    /// body, a shape the main engine cannot page — a <c>LIMIT</c>, an aggregate — is answered by the legacy
+    /// engine, whose rows are right but whose column types are not (a keyword key and <c>count(*)</c> both come
+    /// back as <c>double</c>), and which refuses a backticked dotted index name. Without <c>fetch_size</c> the
+    /// main engine answers with the real types. So <see cref="SearchProtocol.FirstPageBody"/> sends
+    /// <c>fetch_size</c> to OpenSearch SQL only for a plain select. A wrong "plain" costs only the legacy
+    /// engine's type labels; a wrong "not plain" costs only paging — the answer then arrives whole, capped by
+    /// the cluster's <c>plugins.query.size_limit</c> — never rows the server sent.
+    /// </para>
+    /// </summary>
+    public static bool IsPlainSelect(SearchEngine engine, SearchLanguage language, string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (language != SearchLanguage.Sql)
+        {
+            return false;
+        }
+
+        var mode = ModeFor(engine, SearchLanguage.Sql);
+        var code = new List<Token>();
+        for (var i = 0; i < text.Length;)
+        {
+            if (char.IsWhiteSpace(text[i]))
+            {
+                i++;
+                continue;
+            }
+
+            var token = Lex(text, i, mode);
+            if (token.IsCode)
+            {
+                code.Add(token);
+            }
+            i = token.End;
+        }
+
+        if (code.Count == 0 || !IsWord(code[0], "SELECT"))
+        {
+            return false;
+        }
+
+        var depth = 0;
+        var topLevelFrom = false;
+        for (var i = 0; i < code.Count; i++)
+        {
+            var token = code[i];
+            if (token.Text == "(")
+            {
+                depth++;
+                continue;
+            }
+            if (token.Text == ")")
+            {
+                depth = Math.Max(0, depth - 1);
+                continue;
+            }
+            if (token.Kind != Kind.Word)
+            {
+                continue;
+            }
+
+            if ((i > 0 && IsWord(token, "SELECT")) || NotPlainWords.Contains(token.Text))
+            {
+                return false;
+            }
+            if (AggregateFunctions.Contains(token.Text) && i + 1 < code.Count && code[i + 1].Text == "(")
+            {
+                return false;
+            }
+            if (depth == 0 && IsWord(token, "FROM"))
+            {
+                topLevelFrom = true;
+            }
+        }
+
+        return topLevelFrom;
+    }
+
     /// <summary>The language's name as the user knows it — "SQL", "ES|QL" or "PPL" — which leads a server's
     /// error message, so a parse error says which language the statement was read as.</summary>
     public static string LanguageName(SearchEngine engine, SearchLanguage language) => (engine, language) switch
@@ -193,6 +288,22 @@ internal static class SearchBatch
     {
         ",", "(", "|", "UNION", "INTERSECT", "EXCEPT", "MINUS",
     };
+
+    /// <summary>Words that make a statement not a plain select (<see cref="IsPlainSelect(SearchEngine, SearchLanguage, string)"/>).</summary>
+    private static readonly HashSet<string> NotPlainWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "LIMIT", "OFFSET", "GROUP", "HAVING", "JOIN", "UNION", "INTERSECT", "EXCEPT", "MINUS", "OVER", "DISTINCT",
+    };
+
+    /// <summary>Aggregate functions: one of these followed by <c>(</c> makes a statement not a plain select.</summary>
+    internal static readonly IReadOnlySet<string> AggregateFunctions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "COUNT", "SUM", "AVG", "MIN", "MAX", "STDDEV", "STDDEV_POP", "STDDEV_SAMP", "VARIANCE", "VAR_POP",
+        "VAR_SAMP", "PERCENTILE", "PERCENTILE_APPROX", "TAKE", "FIRST", "LAST", "EARLIEST", "LATEST",
+    };
+
+    private static bool IsWord(Token token, string word)
+        => token.Kind == Kind.Word && token.Text.Equals(word, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>One statement from <paramref name="start"/> by <paramref name="mode"/>'s rules: up to and
     /// including a <c>;</c>, up to the last code token before a blank-line boundary, or to the end.</summary>
@@ -340,7 +451,9 @@ internal static class SearchBatch
 
         if (c == '/' && next == '*')
         {
-            return BlockComment(s, i, nested: mode is Mode.ElasticsearchSql or Mode.ElasticsearchPrelude);
+            // Every Elasticsearch language nests block comments — ES|QL measured live (SearchLiveTests): `FROM i
+            // /* a /* b */ c */ | LIMIT 1` runs. OpenSearch SQL and PPL do not: the same text is a syntax error.
+            return BlockComment(s, i, nested: mode is Mode.ElasticsearchSql or Mode.ElasticsearchPrelude or Mode.EsQl);
         }
         if (c == '-' && next == '-' && DashDashIsComment(s, i, mode))
         {

@@ -197,7 +197,9 @@ public class SearchBatchTests
     [InlineData("FROM logs | WHERE a == \"\"\"x;\"y\"\"\"; FROM b", 2)]
     [InlineData("FROM logs // ;\n| LIMIT 1", 1)]
     [InlineData("FROM logs /* ; */ | LIMIT 1", 1)]
-    [InlineData("FROM logs /* /* */ ; FROM b", 2)]
+    // ES|QL block comments nest (measured live): the inner */ does not close the outer comment.
+    [InlineData("FROM logs /* /* */ ; FROM b", 1)]
+    [InlineData("FROM logs /* a /* b */ ; c */ | LIMIT 1; FROM b", 2)]
     [InlineData("FROM logs | WHERE a == 'x; FROM b", 2)]
     [InlineData("FROM logs -- ; FROM b", 2)]
     [InlineData("FROM logs | KEEP `a;b`", 1)]
@@ -286,4 +288,94 @@ public class SearchBatchTests
         Assert.Equal(SearchLanguage.Sql, Only(Es, "-- FROM logs\nselect 'FROM | x'").Language);
         Assert.Equal(SearchLanguage.Sql, Only(Os, "/* source=a | head */ select \"| x\"").Language);
     }
+
+    // ---- Plain select (decision D2: what OpenSearch SQL may be asked to page) ----
+
+    [Theory]
+    [InlineData("select * from logs")]
+    [InlineData("SELECT a, b FROM logs WHERE a > 1 ORDER BY b DESC")]
+    [InlineData("Select * From logs")]
+    [InlineData("select * from `logs-2026.11.21`")]
+    [InlineData("select * from logs.archive where user.name = 'x'")]
+    [InlineData("select `limit`, `group` from logs")]
+    [InlineData("select * from logs where msg = 'limit 5 group by count(x)'")]
+    [InlineData("select * from logs where msg = \"distinct\"")]
+    [InlineData("select * from logs /* limit 5 */")]
+    [InlineData("select * from logs -- limit 5")]
+    [InlineData("select * from logs # union select 1")]
+    [InlineData("select count, first, last from logs")]
+    [InlineData("select * from logs where match(msg, 'x') and abs(a) > 1")]
+    [InlineData("select limits, grouped, countx(a) from logs")]
+    public void A_select_with_a_top_level_from_and_none_of_the_excluded_shapes_is_plain(string text)
+        => Assert.True(SearchBatch.IsPlainSelect(Os, SearchLanguage.Sql, text));
+
+    [Theory]
+    [InlineData("select * from logs limit 100")]
+    [InlineData("select * from logs LIMIT 100")]
+    [InlineData("select * from logs Limit 5 offset 10")]
+    [InlineData("select * from logs offset 10")]
+    [InlineData("select level from logs group by level")]
+    [InlineData("select level from logs having level > 1")]
+    [InlineData("select * from a join b on a.id = b.id")]
+    [InlineData("select a from x union select a from y")]
+    [InlineData("select a from x intersect select a from y")]
+    [InlineData("select a from x except select a from y")]
+    [InlineData("select a from x minus select a from y")]
+    [InlineData("select row_number() over (order by a) from logs")]
+    [InlineData("select distinct level from logs")]
+    [InlineData("select * from (select a from logs) t")]
+    [InlineData("select * from logs where a in (select b from x)")]
+    [InlineData("select 1")]
+    [InlineData("select now()")]
+    [InlineData("select extract(year from d)")]
+    [InlineData("show tables like 'logs'")]
+    [InlineData("describe tables like 'logs'")]
+    [InlineData("DELETE FROM logs")]
+    [InlineData("(select * from logs)")]
+    [InlineData("")]
+    public void Anything_else_is_not_plain(string text)
+        => Assert.False(SearchBatch.IsPlainSelect(Os, SearchLanguage.Sql, text));
+
+    [Theory]
+    [InlineData("COUNT")]
+    [InlineData("SUM")]
+    [InlineData("AVG")]
+    [InlineData("MIN")]
+    [InlineData("MAX")]
+    [InlineData("STDDEV")]
+    [InlineData("STDDEV_POP")]
+    [InlineData("STDDEV_SAMP")]
+    [InlineData("VARIANCE")]
+    [InlineData("VAR_POP")]
+    [InlineData("VAR_SAMP")]
+    [InlineData("PERCENTILE")]
+    [InlineData("PERCENTILE_APPROX")]
+    [InlineData("TAKE")]
+    [InlineData("FIRST")]
+    [InlineData("LAST")]
+    [InlineData("EARLIEST")]
+    [InlineData("LATEST")]
+    public void An_aggregate_call_is_not_plain_in_any_case_or_spacing(string function)
+    {
+        Assert.False(SearchBatch.IsPlainSelect(Os, SearchLanguage.Sql, $"select {function}(a) from logs"));
+        Assert.False(SearchBatch.IsPlainSelect(Os, SearchLanguage.Sql, $"select {function.ToLowerInvariant()} (a) from logs"));
+        Assert.False(SearchBatch.IsPlainSelect(Os, SearchLanguage.Sql, $"select {function} /* c */ (a) from logs"));
+        Assert.True(SearchBatch.IsPlainSelect(Os, SearchLanguage.Sql, $"select `{function}(a)` from logs"));
+    }
+
+    [Fact]
+    public void A_piped_statement_is_never_plain()
+        => Assert.False(SearchBatch.IsPlainSelect(Os, SearchLanguage.Piped, "select * from logs"));
+
+    [Fact]
+    public void The_statement_overload_reads_the_statements_own_language_and_text()
+    {
+        var statements = SearchBatch.Statements(Os, "select * from logs; select * from logs limit 5; source=logs | head 5");
+
+        Assert.Equal([true, false, false], statements.Select(s => SearchBatch.IsPlainSelect(Os, s)));
+    }
+
+    [Fact]
+    public void Elasticsearch_sql_reads_a_double_quoted_word_as_a_name_not_a_keyword()
+        => Assert.True(SearchBatch.IsPlainSelect(Es, SearchLanguage.Sql, "select \"limit\" from \"logs-2026.11.21\""));
 }

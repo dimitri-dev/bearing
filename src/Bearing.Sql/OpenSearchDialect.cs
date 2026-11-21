@@ -39,9 +39,11 @@ public sealed partial class OpenSearchDialect : ISqlDialect
     /// leaves bare (letters, digits, <c>_</c>, no leading digit, not reserved; case is not a reason). Anything
     /// else — a <c>-</c>, a <c>*</c>, a leading <c>.</c> or digit, a space, an <c>@</c> — is backticked whole.
     /// <para>
-    /// That the bare dotted form resolves on the server is a spec assumption, pinned by a live test in batch
-    /// B9 — not known. (The plugin's documentation says a dot inside an <i>index</i> name needs backticks; this
-    /// cannot tell an index from a field, and a field path is what completion inserts most.)
+    /// Measured against OpenSearch 3.10.0 (<c>SearchLiveTests</c>): a bare dotted name runs both as a field path
+    /// and as an index name, and a backticked whole name runs as either too. (The one shape that refused a
+    /// backticked dotted index name, a <c>LIMIT</c> sent with <c>fetch_size</c>, went to the legacy engine; Bearing
+    /// no longer sends <c>fetch_size</c> with a <c>LIMIT</c>.) Unlike Elasticsearch, a dotted path therefore stays
+    /// bare here.
     /// </para>
     /// </summary>
     public bool NeedsQuoting(string identifier)

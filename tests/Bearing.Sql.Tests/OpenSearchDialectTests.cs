@@ -141,6 +141,29 @@ public class OpenSearchDialectTests
         Assert.Equal(new[] { false, true, false, true }, described.Select(s => s.IsRisky));
     }
 
+    /// <summary>A statement with no code but <c>;</c> sends nothing, so it is not described (follow-up F1):
+    /// a stray <c>;;</c> neither prompts nor is refused. The real statements around it still are.</summary>
+    [Theory]
+    [InlineData("select 1;;", new[] { "SELECT" })]
+    [InlineData(";", new string[0])]
+    [InlineData("; select 1", new[] { "SELECT" })]
+    [InlineData("select 1; ; source=x | head 1", new[] { "SELECT", "SOURCE" })]
+    [InlineData("select 1; /* c */ ; -- d\n;", new[] { "SELECT" })]
+    [InlineData("select 1; ; foo", new[] { "SELECT", "FOO" })]
+    public void A_statement_of_only_semicolons_is_not_described(string sql, string[] verbs)
+    {
+        var described = WriteGuard.Describe(Os, sql);
+        Assert.Equal(verbs, described.Select(s => s.Verb));
+        Assert.Equal(verbs.Select(v => v == "FOO"), described.Select(s => s.IsRisky));
+    }
+
+    [Fact]
+    public void A_stray_double_semicolon_runs_on_an_exposed_connection() => Assert.Null(External("select 1;;"));
+
+    [Fact]
+    public void A_lone_semicolon_is_no_statement_to_run()
+        => Assert.Equal("There is no statement here to run.", External(";"));
+
     // ---- Exposed connections ----
 
     [Theory]

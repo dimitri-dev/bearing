@@ -102,8 +102,43 @@ public class SearchProtocolTests
     {
         Assert.Equal(expected, SearchProtocol.FetchSize(maxRows));
 
-        using var document = JsonDocument.Parse(SearchProtocol.FirstPageBody(OsSql, "select 1", maxRows));
+        using var document = JsonDocument.Parse(SearchProtocol.FirstPageBody(OsSql, "select a from logs", maxRows));
         Assert.Equal(expected, document.RootElement.GetProperty("fetch_size").GetInt32());
+    }
+
+    /// <summary>
+    /// Decision D2: OpenSearch SQL asks for pages only for a plain select — with <c>fetch_size</c> any other shape
+    /// is answered by the legacy engine, which mislabels column types (measured on 3.10.0). Elasticsearch SQL pages
+    /// every shape itself, so it always asks.
+    /// </summary>
+    [Theory]
+    [InlineData("select a, b from logs where a > 1 order by b", true)]
+    [InlineData("SELECT * FROM `logs-2026.11.21`", true)]
+    [InlineData("select * from logs limit 100", false)]
+    [InlineData("select count(*) from logs", false)]
+    [InlineData("select level, count(*) from logs group by level", false)]
+    [InlineData("select distinct level from logs", false)]
+    [InlineData("select 1", false)]
+    public void Opensearch_sql_sends_a_page_size_only_for_a_plain_select(string query, bool pages)
+    {
+        Assert.Equal(pages, SearchProtocol.AsksForPages(OsSql, query));
+
+        using var os = JsonDocument.Parse(SearchProtocol.FirstPageBody(OsSql, query, 100));
+        Assert.Equal(query, os.RootElement.GetProperty("query").GetString());
+        Assert.Equal(pages, os.RootElement.TryGetProperty("fetch_size", out _));
+        Assert.Equal(pages ? 2 : 1, os.RootElement.EnumerateObject().Count());
+
+        Assert.True(SearchProtocol.AsksForPages(EsSql, query));
+        using var es = JsonDocument.Parse(SearchProtocol.FirstPageBody(EsSql, query, 100));
+        Assert.Equal(100, es.RootElement.GetProperty("fetch_size").GetInt32());
+        Assert.Equal("5m", es.RootElement.GetProperty("page_timeout").GetString());
+    }
+
+    [Fact]
+    public void A_piped_endpoint_never_asks_for_pages()
+    {
+        Assert.False(SearchProtocol.AsksForPages(EsQl, "FROM logs"));
+        Assert.False(SearchProtocol.AsksForPages(Ppl, "source=logs"));
     }
 
     // ---- Responses: one realistic answer per endpoint ----
@@ -145,6 +180,41 @@ public class SearchProtocolTests
         Assert.Equal(JsonValueKind.Array, page.Rows[0][1].ValueKind);
         Assert.Equal(JsonValueKind.Null, page.Rows[1][1].ValueKind);
         Assert.Null(page.Cursor);
+        Assert.Null(page.Notice);
+    }
+
+    /// <summary>Decision D3: Elasticsearch answers HTTP 200 with <c>"is_partial": true</c> and no Warning header
+    /// when a shard could not be read (measured, 9.5.6); the notice says so first, ahead of any warning.</summary>
+    [Fact]
+    public void An_esql_partial_answer_says_so_ahead_of_any_warning()
+    {
+        var body = """{"is_partial":true,"columns":[{"name":"a","type":"long"}],"values":[[1]]}""";
+
+        var alone = SearchProtocol.ParseFirstPage(EsQl, Ok(body));
+        Assert.Equal(SearchProtocol.PartialAnswerSentence, alone.Notice);
+        Assert.Contains("is_partial", alone.Notice);
+        Assert.Contains("rows may be missing", alone.Notice);
+
+        var warned = SearchProtocol.ParseFirstPage(
+            EsQl, new SearchResponse(200, Encoding.UTF8.GetBytes(body), ["299 Elasticsearch-9.5.6-x \"No limit defined\""]));
+        Assert.Equal($"{SearchProtocol.PartialAnswerSentence} No limit defined", warned.Notice);
+    }
+
+    [Theory]
+    [InlineData("""{"is_partial":false,"columns":[{"name":"a","type":"long"}],"values":[[1]]}""")]
+    [InlineData("""{"columns":[{"name":"a","type":"long"}],"values":[[1]]}""")]
+    [InlineData("""{"is_partial":"true","columns":[{"name":"a","type":"long"}],"values":[[1]]}""")]
+    public void An_esql_answer_not_marked_partial_has_no_partial_notice(string body)
+        => Assert.Null(SearchProtocol.ParseFirstPage(EsQl, Ok(body)).Notice);
+
+    [Fact]
+    public void Only_esql_reads_is_partial()
+    {
+        var sql = SearchProtocol.ParseFirstPage(EsSql, Ok("""{"is_partial":true,"columns":[{"name":"a","type":"long"}],"rows":[[1]]}"""));
+        var ppl = SearchProtocol.ParseFirstPage(Ppl, Ok("""{"is_partial":true,"schema":[{"name":"a","type":"long"}],"datarows":[[1]]}"""));
+
+        Assert.Null(sql.Notice);
+        Assert.Null(ppl.Notice);
     }
 
     [Fact]

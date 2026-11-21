@@ -175,7 +175,9 @@ public class SearchScanTests
     [InlineData("FROM logs | WHERE a == \"\"\"x;\"y\"\"\"; FROM b", 2)]
     [InlineData("FROM logs // ;\n| LIMIT 1", 1)]
     [InlineData("FROM logs /* ; */ | LIMIT 1", 1)]
-    [InlineData("FROM logs /* /* */ ; FROM b", 2)]
+    // ES|QL block comments nest (measured live): the inner */ does not close the outer comment.
+    [InlineData("FROM logs /* /* */ ; FROM b", 1)]
+    [InlineData("FROM logs /* a /* b */ ; c */ | LIMIT 1; FROM b", 2)]
     [InlineData("FROM logs | WHERE a == 'x; FROM b", 2)]
     [InlineData("FROM logs -- ; FROM b", 2)]
     [InlineData("FROM logs | KEEP `a;b`", 1)]

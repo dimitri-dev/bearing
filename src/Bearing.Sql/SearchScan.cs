@@ -125,7 +125,8 @@ public sealed record SearchStatement(
 ///     with <c>""</c>; <c>`…`</c> names (the parser refuses them, the lexer still reads them as one token);
 ///     <c>--</c> and <c>/* */</c> comments, block comments nest.</item>
 ///   <item>ES|QL: <c>"…"</c> <b>strings</b> with backslash escapes and <c>"""…"""</c> strings with none;
-///     <c>`…`</c> names with <c>``</c>; <c>//</c> and <c>/* */</c> comments (not nested); <c>--</c> is not a
+///     <c>`…`</c> names with <c>``</c>; <c>//</c> and <c>/* */</c> comments, block comments nest (measured
+///     live, not in the vendor docs); <c>--</c> is not a
 ///     comment and <c>'</c> does not open a string.</item>
 ///   <item>OpenSearch SQL: <c>`…`</c> names; <c>'…'</c> and <c>"…"</c> both an opaque quoted span, read as a
 ///     string, with doubled-quote and backslash escapes; <c>#</c>, <c>--</c> followed by whitespace (or the
@@ -296,6 +297,15 @@ public static class SearchScan
     /// known read of its language — a row of the language table, <c>DELETE</c> excepted; an OpenSearch
     /// <c>DELETE</c> names a write; an ES|QL statement with an <c>INTO</c> command names a write; every other
     /// statement is risky by the conservative default (an unknown first word), widening only (§1.2).
+    /// <para>
+    /// A statement with no code but <c>;</c> — the second statement of <c>select 1;;</c>, or a lone <c>;</c> —
+    /// is not a statement and is not described, as the PostgreSQL guard skips a span with no keyword: it sends
+    /// nothing (the executor skips it), so describing it as risky only made a stray <c>;;</c> prompt under
+    /// "Confirm writes" and be refused on a read-only connection. Anything else that is code — a word, a
+    /// parenthesis, a pipe — is still described, so nothing real is un-flagged. <see cref="Statements"/> and
+    /// <see cref="Split"/> keep the bare <c>;</c> (their spans follow <see cref="StatementSplitter"/>'s
+    /// contract).
+    /// </para>
     /// </summary>
     internal static IReadOnlyList<StatementRisk> Describe(SearchEngine engine, string sql)
     {
@@ -307,6 +317,11 @@ public static class SearchScan
 
         foreach (var statement in Statements(engine, sql))
         {
+            if (statement.Tokens.All(t => !t.IsCode || t is { Kind: SearchTokenKind.Punctuation, Text: ";" }))
+            {
+                continue;
+            }
+
             var found = new List<string>();
             if (engine == SearchEngine.OpenSearch && statement.Verb == "DELETE")
             {
@@ -770,7 +785,9 @@ public static class SearchScan
         // Comments.
         if (c == '/' && next == '*')
         {
-            return BlockComment(s, i, nested: mode is Mode.ElasticsearchSql or Mode.ElasticsearchPrelude);
+            // Every Elasticsearch language nests block comments — ES|QL measured live (SearchLiveTests): `FROM i
+            // /* a /* b */ c */ | LIMIT 1` runs. OpenSearch SQL and PPL do not: the same text is a syntax error.
+            return BlockComment(s, i, nested: mode is Mode.ElasticsearchSql or Mode.ElasticsearchPrelude or Mode.EsQl);
         }
         if (c == '-' && next == '-' && DashDashIsComment(s, i, mode))
         {

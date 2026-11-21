@@ -41,9 +41,10 @@ internal sealed record SearchPage(
 ///   <item><term>Elasticsearch SQL <c>/_sql?format=json</c></term><description><c>{"query", "fetch_size",
 ///     "page_timeout"}</c> / <c>{"cursor"}</c>; answer <c>columns</c>, <c>rows</c>, <c>cursor</c>.</description></item>
 ///   <item><term>ES|QL <c>/_query?format=json</c></term><description><c>{"query"}</c> / none; answer
-///     <c>columns</c>, <c>values</c>.</description></item>
+///     <c>columns</c>, <c>values</c>, <c>is_partial</c>.</description></item>
 ///   <item><term>OpenSearch SQL <c>/_plugins/_sql?format=jdbc</c></term><description><c>{"query",
-///     "fetch_size"}</c> / <c>{"cursor"}</c>; answer <c>schema</c>, <c>datarows</c>, <c>cursor</c>.</description></item>
+///     "fetch_size"}</c> for a plain select, <c>{"query"}</c> otherwise (<see cref="AsksForPages"/>) /
+///     <c>{"cursor"}</c>; answer <c>schema</c>, <c>datarows</c>, <c>cursor</c>.</description></item>
 ///   <item><term>PPL <c>/_plugins/_ppl?format=jdbc</c></term><description><c>{"query"}</c> / none; answer
 ///     <c>schema</c>, <c>datarows</c>.</description></item>
 /// </list>
@@ -72,6 +73,14 @@ internal static partial class SearchProtocol
 
     /// <summary>The longest warning text kept from one header or body entry; a longer one is cut with "…".</summary>
     internal const int MaxNoticeLength = 500;
+
+    /// <summary>
+    /// What leads an ES|QL page's notice when the answer carries <c>"is_partial": true</c> (<see cref="IsPartial"/>),
+    /// ahead of any warning text. It says what the server said — that it marked the answer partial — and what that
+    /// can mean for the rows; it does not guess which shard or why.
+    /// </summary>
+    internal const string PartialAnswerSentence =
+        "Elasticsearch marked this answer as partial (is_partial), so rows may be missing.";
 
     private static readonly SearchEndpoint ElasticsearchSql =
         new(SearchEngine.Elasticsearch, SearchLanguage.Sql, "/_sql?format=json", "SQL", Pages: true);
@@ -112,8 +121,10 @@ internal static partial class SearchProtocol
 
     /// <summary>
     /// The body that runs <paramref name="query"/> (already without its trailing <c>;</c>) on
-    /// <paramref name="endpoint"/>. The SQL endpoints carry <c>fetch_size</c> (<see cref="FetchSize"/>) and, on
-    /// Elasticsearch, <c>page_timeout</c>; the piped endpoints carry the query alone — they do not page.
+    /// <paramref name="endpoint"/>. Elasticsearch SQL carries <c>fetch_size</c> (<see cref="FetchSize"/>) and
+    /// <c>page_timeout</c> for every statement — it pages every shape itself. OpenSearch SQL carries
+    /// <c>fetch_size</c> only for a plain select (<see cref="AsksForPages"/>); any other statement, and every
+    /// piped one, carries the query alone and is answered whole.
     /// </summary>
     public static byte[] FirstPageBody(SearchEndpoint endpoint, string query, int? maxRows)
     {
@@ -123,7 +134,7 @@ internal static partial class SearchProtocol
         return Write(writer =>
         {
             writer.WriteString("query", query);
-            if (!endpoint.Pages)
+            if (!AsksForPages(endpoint, query))
             {
                 return;
             }
@@ -134,6 +145,24 @@ internal static partial class SearchProtocol
                 writer.WriteString("page_timeout", PageTimeout);
             }
         });
+    }
+
+    /// <summary>
+    /// Whether the first request for <paramref name="query"/> asks <paramref name="endpoint"/> for pages
+    /// (<c>fetch_size</c>): always on Elasticsearch SQL; on OpenSearch SQL only when the statement reads as a
+    /// plain select (<see cref="SearchBatch.IsPlainSelect(SearchEngine, SearchLanguage, string)"/>), because
+    /// there <c>fetch_size</c> sends every other shape to the legacy engine, which mislabels column types
+    /// (measured against OpenSearch 3.10.0). Never on a piped endpoint. A statement sent without it comes back
+    /// whole, with no cursor.
+    /// </summary>
+    public static bool AsksForPages(SearchEndpoint endpoint, string query)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentNullException.ThrowIfNull(query);
+
+        return endpoint.Pages
+               && (endpoint.Engine == SearchEngine.Elasticsearch
+                   || SearchBatch.IsPlainSelect(endpoint.Engine, endpoint.Language, query));
     }
 
     /// <summary>
@@ -258,6 +287,10 @@ internal static partial class SearchProtocol
             var rows = ReadRows(endpoint, root, width);
             var cursor = endpoint.Pages ? ReadCursor(endpoint, root) : null;
             var notice = Notice(response.Warnings, BodyWarnings(root));
+            if (endpoint is { Engine: SearchEngine.Elasticsearch, Language: SearchLanguage.Piped } && IsPartial(root))
+            {
+                notice = notice is null ? PartialAnswerSentence : $"{PartialAnswerSentence} {notice}";
+            }
 
             return new SearchPage(columns, rows, cursor, notice);
         }
@@ -329,6 +362,16 @@ internal static partial class SearchProtocol
 
         return rows;
     }
+
+    /// <summary>
+    /// ES|QL's <c>"is_partial": true</c>. Measured against Elasticsearch 9.5.6: with
+    /// <c>esql.query.allow_partial_results</c> at its default (true), a query over a shard that cannot be read
+    /// answers HTTP 200 with <c>is_partial</c> true and <b>no</b> <c>Warning</c> header — so without this the
+    /// answer would look whole. Absent, false or not a boolean reads as not partial: only the server's own
+    /// <c>true</c> says rows may be missing.
+    /// </summary>
+    private static bool IsPartial(JsonElement root)
+        => root.TryGetProperty("is_partial", out var partial) && partial.ValueKind == JsonValueKind.True;
 
     private static string? ReadCursor(SearchEndpoint endpoint, JsonElement root)
     {

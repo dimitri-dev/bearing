@@ -3,7 +3,7 @@ using Xunit;
 namespace Bearing.Sql.Tests;
 
 /// <summary>
-/// The text half of Elasticsearch support (SC4): quoting with bare dotted field paths, the paging, counting
+/// The text half of Elasticsearch support (SC4): quoting (a dotted name quoted whole), the paging, counting
 /// and editing hooks that must answer "not on this engine", the write guard over Elasticsearch SQL and ES|QL,
 /// and what an exposed connection runs and refuses (spec Behaviour 7 and 11).
 /// </summary>
@@ -20,9 +20,11 @@ public class ElasticsearchDialectTests
 
     [Theory]
     [InlineData("logs", "logs")]
-    [InlineData("user.name", "user.name")]
-    [InlineData("title.keyword", "title.keyword")]
-    [InlineData("a.b.c", "a.b.c")]
+    [InlineData("user.name", "\"user.name\"")]
+    [InlineData("title.keyword", "\"title.keyword\"")]
+    [InlineData("a.b.c", "\"a.b.c\"")]
+    [InlineData("logs-2026.11.21", "\"logs-2026.11.21\"")]
+    [InlineData("user_name", "user_name")]
     [InlineData("logs-2024", "\"logs-2024\"")]
     [InlineData("logs*", "\"logs*\"")]
     [InlineData("Logs", "\"Logs\"")]
@@ -37,7 +39,7 @@ public class ElasticsearchDialectTests
     [InlineData("user.select", "\"user.select\"")]
     [InlineData("a\"b", "\"a\"\"b\"")]
     [InlineData("", "\"\"")]
-    public void Plain_words_and_dotted_paths_stay_bare_and_anything_else_is_quoted_whole(string name, string expected)
+    public void Plain_words_stay_bare_and_anything_else_dotted_paths_included_is_quoted_whole(string name, string expected)
     {
         Assert.Equal(expected, Es.QuoteIfNeeded(name));
         Assert.Equal(expected != name, Es.NeedsQuoting(name));
@@ -147,6 +149,29 @@ public class ElasticsearchDialectTests
         Assert.Equal(new[] { false, true, true, false }, described.Select(s => s.IsRisky));
         Assert.Equal(new[] { "SELECT", "FROM", "FOO", "FROM" }, described.Select(s => s.Verb));
     }
+
+    /// <summary>A statement with no code but <c>;</c> sends nothing, so it is not described (follow-up F1):
+    /// a stray <c>;;</c> neither prompts nor is refused. The real statements around it still are.</summary>
+    [Theory]
+    [InlineData("select 1;;", new[] { "SELECT" })]
+    [InlineData(";", new string[0])]
+    [InlineData("; select 1", new[] { "SELECT" })]
+    [InlineData("select 1; ; from x | limit 1", new[] { "SELECT", "FROM" })]
+    [InlineData("select 1; /* c */ ; // d\n;", new[] { "SELECT" })]
+    [InlineData("select 1; ; foo", new[] { "SELECT", "FOO" })]
+    public void A_statement_of_only_semicolons_is_not_described(string sql, string[] verbs)
+    {
+        var described = WriteGuard.Describe(Es, sql);
+        Assert.Equal(verbs, described.Select(s => s.Verb));
+        Assert.Equal(verbs.Select(v => v == "FOO"), described.Select(s => s.IsRisky));
+    }
+
+    [Fact]
+    public void A_stray_double_semicolon_runs_on_an_exposed_connection() => Assert.Null(External("select 1;;"));
+
+    [Fact]
+    public void A_lone_semicolon_is_no_statement_to_run()
+        => Assert.Equal("There is no statement here to run.", External(";"));
 
     // ---- Exposed connections ----
 

@@ -176,6 +176,37 @@ public class SearchQueryExecutorTests
         Assert.Equal("c1secret", sent.Cursor);
     }
 
+    /// <summary>Decision D4, the shape Elasticsearch 9.5.6 was measured to send for a closed cursor: a generic
+    /// reason, the real cause only in <c>root_cause[0]</c>. The sentence carries both, the cursor cut out.</summary>
+    [Fact]
+    public async Task A_closed_elasticsearch_cursor_shows_the_root_cause_after_the_generic_reason()
+    {
+        var api = new FakeSearchApi(r => r.Query is not null
+            ? SqlFirst(SearchEngine.Elasticsearch, 1, cursor: "c1secret")
+            : Error(404, """
+                {"error":{"root_cause":[{"type":"search_context_missing_exception","reason":"No search context found for id [42]"}],
+                 "type":"search_phase_execution_exception","reason":"all shards failed","phase":"query"},"status":404}
+                """));
+        var executor = Executor(api, SearchEngine.Elasticsearch);
+        var first = Assert.Single(await executor.ExecuteAsync("SELECT n FROM logs", new QueryOptions { MaxRows = 1 }, CancellationToken.None));
+
+        var result = await executor.ExecuteContinuationAsync(first.Continuation!, 1, CancellationToken.None);
+
+        Assert.EndsWith("Elasticsearch said: all shards failed (No search context found for id [42])", result.Error!.Message);
+        Assert.Equal("search_phase_execution_exception", result.Error.SqlState);
+    }
+
+    [Fact]
+    public void A_cursor_cut_inside_a_bounded_root_cause_is_cut_out_too()
+    {
+        var cursor = "c1" + new string('Q', 400);
+        var cutOff = cursor[..250] + "…";
+
+        Assert.Equal("bad cursor [[cursor]]", SearchQueryExecutor.WithoutCursor($"bad cursor [{cursor}]", cursor));
+        Assert.Equal("generic (bad [[cursor]…)", SearchQueryExecutor.WithoutCursor($"generic (bad [{cutOff})", cursor));
+        Assert.Equal("no cursor here…", SearchQueryExecutor.WithoutCursor("no cursor here…", cursor));
+    }
+
     [Fact]
     public async Task An_opensearch_rejected_cursor_names_the_clusters_keep_alive()
     {
@@ -220,6 +251,71 @@ public class SearchQueryExecutorTests
 
         Assert.False(result.Success);
         Assert.Empty(elastic.Requests);
+    }
+
+    // ---- OpenSearch: fetch_size for a plain select only (decision D2) ---------------------------------
+
+    [Theory]
+    [InlineData("SELECT n, name FROM logs WHERE n > 0", true)]
+    [InlineData("select * from `logs-2026.11.21` limit 100", false)]
+    [InlineData("SELECT name, count(*) FROM logs GROUP BY name", false)]
+    public async Task Opensearch_sql_asks_for_a_page_only_for_a_plain_select(string statement, bool pages)
+    {
+        var api = new FakeSearchApi(_ => SqlFirst(SearchEngine.OpenSearch, 3, cursor: pages ? "c1" : null));
+
+        var result = Assert.Single(await Executor(api, SearchEngine.OpenSearch)
+            .ExecuteAsync(statement, new QueryOptions { MaxRows = 2 }, CancellationToken.None));
+
+        var sent = Assert.Single(api.Requests);
+        Assert.Equal(OsSql, sent.Path);
+        Assert.Equal(statement, sent.Query);
+        Assert.Equal(pages ? 2 : (int?)null, sent.Field("fetch_size")?.GetInt32());
+        // Without fetch_size the answer comes back whole: every row, no continuation.
+        Assert.Equal(3, result.Rows.Count);
+        Assert.Equal(pages, result.Truncated);
+        Assert.Equal(pages, result.Continuation is not null);
+    }
+
+    [Fact]
+    public async Task Elasticsearch_sql_asks_for_a_page_for_every_shape()
+    {
+        var api = new FakeSearchApi(_ => SqlFirst(SearchEngine.Elasticsearch, 1));
+
+        await Executor(api, SearchEngine.Elasticsearch).ExecuteAsync(
+            "SELECT name, count(*) FROM logs GROUP BY name; select * from \"logs-2026.11.21\" limit 100",
+            new QueryOptions { MaxRows = 7 }, CancellationToken.None);
+
+        Assert.All(api.Requests, r => Assert.Equal(7, r.Field("fetch_size")!.Value.GetInt32()));
+    }
+
+    [Theory]
+    [InlineData("SELECT n, name FROM logs", true)]
+    [InlineData("SELECT n, name FROM logs LIMIT 100", false)]
+    public async Task A_stream_follows_the_same_rule(string statement, bool pages)
+    {
+        var api = new FakeSearchApi(_ => SqlFirst(SearchEngine.OpenSearch, 2));
+
+        await Stream(Executor(api, SearchEngine.OpenSearch), statement, new QueryOptions { BatchRows = 5 });
+
+        Assert.Equal(pages, Assert.Single(api.Requests).Field("fetch_size") is not null);
+    }
+
+    // ---- ES|QL partial answers (decision D3) -----------------------------------------------------------
+
+    [Fact]
+    public async Task An_esql_partial_answer_says_so_in_the_results_notice()
+    {
+        var api = new FakeSearchApi(_ => Json(
+            """{"is_partial":true,"columns":[{"name":"n","type":"long"}],"values":[[1]]}""",
+            "299 Elasticsearch-9.5.6-x \"No limit defined, adding default limit of [1000]\""));
+
+        var result = Assert.Single(await Executor(api, SearchEngine.Elasticsearch)
+            .ExecuteAsync("FROM logs", new QueryOptions(), CancellationToken.None));
+
+        Assert.True(result.Success);
+        Assert.Null(result.Message);
+        Assert.Equal(
+            $"{SearchProtocol.PartialAnswerSentence} No limit defined, adding default limit of [1000]", result.Notice);
     }
 
     // ---- whole answers ---------------------------------------------------------------------------------

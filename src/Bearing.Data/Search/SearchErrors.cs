@@ -252,7 +252,10 @@ internal static class SearchErrors
     /// <summary>
     /// A non-2xx answer as the <see cref="QueryError"/> the grid shows. Reads the servers' JSON envelope —
     /// <c>{"error":{"type","reason","details"},"status"}</c>, where <c>error</c> may also be a plain string —
-    /// and falls back to a bounded excerpt of a body that is not JSON. <paramref name="language"/> ("SQL",
+    /// and falls back to a bounded excerpt of a body that is not JSON. When <c>error.root_cause[0].reason</c> is
+    /// non-blank and not already in the text (it differs from the reason), it follows the reason in parentheses,
+    /// cut at <see cref="ExcerptLength"/> characters: a generic reason ("all shards failed") then still says what
+    /// failed. <paramref name="language"/> ("SQL",
     /// "ES|QL", "PPL") leads the message when given, so a parse error says which language it was read as.
     /// <para>
     /// <b>Position.</b> When the reason (or, failing that, the details) carries <c>line L:C:</c>, the position
@@ -272,11 +275,17 @@ internal static class SearchErrors
             return new QueryError(RedirectSentence(status), RedirectCode, null);
         }
 
-        var (type, reason, details) = ReadEnvelope(body);
+        var (type, reason, details, rootCause) = ReadEnvelope(body);
         var text = reason ?? details ?? Excerpt(body);
         if (reason is not null && details is not null && !reason.Contains(details, StringComparison.Ordinal))
         {
             text = $"{reason}: {details}";
+        }
+        // The root cause, when it says more: Elasticsearch answers a closed cursor with reason "all shards failed"
+        // and the real cause ("No search context found for id […]") only in root_cause[0] (measured, 9.5.6).
+        if (reason is not null && rootCause is not null && !text.Contains(rootCause, StringComparison.Ordinal))
+        {
+            text = $"{text} ({Bounded(rootCause)})";
         }
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -443,11 +452,11 @@ internal static class SearchErrors
 
     /// <summary>The envelope's type, reason and details; all null when the body is not JSON or has no
     /// <c>error</c>. A string <c>error</c> is the reason.</summary>
-    private static (string? Type, string? Reason, string? Details) ReadEnvelope(byte[] body)
+    private static (string? Type, string? Reason, string? Details, string? RootCause) ReadEnvelope(byte[] body)
     {
         if (body.Length == 0)
         {
-            return (null, null, null);
+            return (null, null, null, null);
         }
 
         try
@@ -456,21 +465,36 @@ internal static class SearchErrors
             if (document.RootElement.ValueKind != JsonValueKind.Object
                 || !document.RootElement.TryGetProperty("error", out var error))
             {
-                return (null, null, null);
+                return (null, null, null, null);
             }
 
             return error.ValueKind switch
             {
-                JsonValueKind.String => (null, NonBlank(error.GetString()), null),
-                JsonValueKind.Object => (StringOf(error, "type"), StringOf(error, "reason"), StringOf(error, "details")),
-                _ => (null, null, null),
+                JsonValueKind.String => (null, NonBlank(error.GetString()), null, null),
+                JsonValueKind.Object => (StringOf(error, "type"), StringOf(error, "reason"), StringOf(error, "details"),
+                    RootCauseOf(error)),
+                _ => (null, null, null, null),
             };
         }
         catch (JsonException)
         {
-            return (null, null, null);
+            return (null, null, null, null);
         }
     }
+
+    /// <summary>The <c>reason</c> of <c>error.root_cause[0]</c>, when the envelope has one that is a non-blank
+    /// string; null otherwise.</summary>
+    private static string? RootCauseOf(JsonElement error)
+        => error.TryGetProperty("root_cause", out var causes)
+           && causes.ValueKind == JsonValueKind.Array
+           && causes.GetArrayLength() > 0
+           && causes[0].ValueKind == JsonValueKind.Object
+            ? StringOf(causes[0], "reason")
+            : null;
+
+    /// <summary><paramref name="text"/> cut at <see cref="ExcerptLength"/> characters, with "…" when cut.</summary>
+    private static string Bounded(string text)
+        => text.Length <= ExcerptLength ? text : text[..ExcerptLength] + "…";
 
     private static string? StringOf(JsonElement element, string name)
         => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String

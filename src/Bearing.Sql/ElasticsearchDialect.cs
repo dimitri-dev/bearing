@@ -34,24 +34,23 @@ public sealed partial class ElasticsearchDialect : ISqlDialect
     public string QuoteIfNeeded(string identifier) => NeedsQuoting(identifier) ? Quote(identifier) : identifier;
 
     /// <summary>
-    /// False for a plain word, and for a <b>dotted path of plain words</b> (<c>user.name</c>,
-    /// <c>title.keyword</c>) — how a mapped field is written. A plain word is lower-case letters, digits and
-    /// <c>_</c>, not starting with a digit (the form <see cref="PgIdentifier"/> leaves bare, upper case quoted
-    /// because nothing here vouches for how the server treats it), and is not in <see cref="Keywords"/>.
-    /// PostgreSQL's reserved list is deliberately not used: it reserves <c>user</c>, which would quote every
-    /// <c>user.*</c> field for a keyword Elasticsearch SQL does not have. Anything else — a <c>-</c>, a
-    /// <c>*</c>, a leading <c>.</c> or digit, a space, an upper-case letter, <c>@</c> — is quoted whole
-    /// (<c>"logs-2024"</c>). Over-quoting costs a pair of quotes; under-quoting a parse error.
+    /// False only for a <b>plain word</b>: lower-case letters, digits and <c>_</c>, not starting with a digit
+    /// (the form <see cref="PgIdentifier"/> leaves bare, upper case quoted because nothing here vouches for how
+    /// the server treats it), and not in <see cref="Keywords"/>. PostgreSQL's reserved list is deliberately not
+    /// used: it reserves <c>user</c>, a keyword Elasticsearch SQL does not have. Anything else — a <c>.</c>, a
+    /// <c>-</c>, a <c>*</c>, a leading digit, a space, an upper-case letter, <c>@</c> — is quoted <b>whole</b>
+    /// (<c>"user.name"</c>, <c>"logs-2026.11.21"</c>). Over-quoting costs a pair of quotes; under-quoting a
+    /// parse error.
     /// <para>
-    /// That the bare dotted form resolves on the server is a spec assumption, pinned by a live test in batch
-    /// B9 — not known. (The vendor documentation says an <i>index</i> name holding a dot needs quotes; this
-    /// cannot tell an index from a field, and a field path is what completion inserts most.)
+    /// A dotted name is quoted because this cannot tell an index from a field, and the two forms were measured
+    /// against Elasticsearch 9.5.6 (<c>SearchLiveTests</c>): a <b>bare</b> index name holding a <c>.</c> or a
+    /// <c>-</c> is a parsing error, while the double-quoted whole name runs both as an index name and as a
+    /// field path (<c>"user.name"</c> resolves the field). Index names with dots are the common case
+    /// (<c>logs-2026.11.21</c>). Never quoted per segment: <c>"a"."b"</c> reads as catalog and table.
     /// </para>
     /// </summary>
     public bool NeedsQuoting(string identifier)
-        => identifier.Length == 0
-           || !DottedPathRegex().IsMatch(identifier)
-           || identifier.Split('.').Any(part => !PlainWordRegex().IsMatch(part) || Keywords.Contains(part));
+        => !PlainWordRegex().IsMatch(identifier) || Keywords.Contains(identifier);
 
     /// <inheritdoc/>
     public string Unquote(string identifier) => PgIdentifier.Unquote(identifier);
@@ -251,10 +250,6 @@ public sealed partial class ElasticsearchDialect : ISqlDialect
     };
 
     private const string GridEditingWithheld = "Grid editing isn't available on Elasticsearch connections.";
-
-    /// <summary>Plain words joined by single dots: no leading, trailing or doubled dot.</summary>
-    [GeneratedRegex(@"^[^.]+(\.[^.]+)*$")]
-    private static partial Regex DottedPathRegex();
 
     /// <summary>One plain word: lower-case letters, digits and <c>_</c>, no leading digit.</summary>
     [GeneratedRegex(@"^[a-z_][a-z0-9_]*$")]
