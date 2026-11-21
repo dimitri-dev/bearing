@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Security.Authentication;
 using System.Text;
 using Bearing.Core.Data;
+using Bearing.Data.Aws;
 using Bearing.Data.Search;
 using Xunit;
 
@@ -238,6 +239,55 @@ public class SearchErrorsTests
         Assert.Contains("aws sso login --profile dev", sentence);
     }
 
+    [Theory]
+    [InlineData(nameof(AwsSignInProblem.ProfileNotFound), "AWS profile 'dev' was not found.")]
+    [InlineData(nameof(AwsSignInProblem.ProfileHasNoCredentials), "AWS profile 'dev' was found, but")]
+    [InlineData(nameof(AwsSignInProblem.CouldNotSignIn), "Could not get AWS credentials from profile 'dev' to sign the requests to OpenSearch")]
+    public void The_aws_credential_sentences_name_the_profile_and_the_command(string problemName, string start)
+    {
+        var problem = Enum.Parse<AwsSignInProblem>(problemName);
+
+        var sentence = SearchErrors.AwsSignInSentence(SearchEngine.OpenSearch, "  dev ", problem);
+
+        Assert.StartsWith(start, sentence);
+        Assert.Contains("aws sso login --profile dev", sentence);
+        Assert.Equal(sentence, new SearchSignInException(SearchEngine.OpenSearch, "dev", problem).Message);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public void A_blank_profile_says_the_default_chain_produced_no_credentials(string? profile)
+    {
+        var sentence = SearchErrors.AwsSignInSentence(SearchEngine.OpenSearch, profile, AwsSignInProblem.CouldNotSignIn);
+
+        Assert.StartsWith("The AWS SDK's default credential chain produced no credentials", sentence);
+        Assert.Contains("aws sso login", sentence);
+        Assert.DoesNotContain("--profile", sentence);
+    }
+
+    [Fact]
+    public void An_aws_credential_failure_is_an_authentication_failure_with_its_own_sentence_in_the_grid()
+    {
+        var failure = new SearchSignInException(SearchEngine.OpenSearch, "dev", AwsSignInProblem.ProfileNotFound);
+
+        Assert.Equal(SearchAuthMethod.AwsSigV4, failure.Method);
+        Assert.Equal(AwsSignInProblem.ProfileNotFound, failure.Problem);
+        Assert.Null(failure.InnerException);
+        Assert.Equal(DbErrorKind.Authentication, SearchErrors.Classify(new AggregateException(failure)));
+        var error = SearchErrors.ToQueryError(failure, SearchEngine.OpenSearch, 30);
+        Assert.Equal(failure.Message, error.Message);
+        Assert.Equal(SearchErrors.SignInCode, error.SqlState);
+        Assert.Null(new SearchSignInException(SearchEngine.OpenSearch, SearchAuthMethod.AwsSigV4, "dev").Problem);
+    }
+
+    [Fact]
+    public void The_region_sentences_name_the_field()
+    {
+        Assert.Contains("AWS region field", SearchErrors.AwsRegionMissingSentence);
+        Assert.Contains("AWS region field", SearchErrors.AwsRegionInvalidSentence);
+    }
+
     [Fact]
     public void A_thrown_server_error_keeps_its_query_error_and_other_text_is_scrubbed()
     {
@@ -277,6 +327,11 @@ public class SearchErrorsTests
     [InlineData("could not reach https://elastic:s3cretpass@search.example.com:9200/", "s3cretpass")]
     [InlineData("api_key=abcdef0123456789 was rejected", "abcdef0123456789")]
     [InlineData("connection string Password=hunter22;Host=x", "hunter22")]
+    [InlineData("Credential=AKIDEXAMPLE/20150830/us-east-1/es/aws4_request, SignedHeaders=host;x-amz-date", "AKIDEXAMPLE")]
+    [InlineData("SignedHeaders=host;x-amz-date, Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31",
+        "5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31")]
+    [InlineData("GET /?X-Amz-Credential=ASIAFAKEKEYID12345678%2F20250102&X-Amz-Signature=abc123def456 failed", "ASIAFAKEKEYID12345678")]
+    [InlineData("GET /?X-Amz-Credential=ASIAFAKEKEYID12345678%2F20250102&X-Amz-Signature=abc123def456 failed", "abc123def456")]
     public void Scrub_removes_every_credential_form(string message, string secret)
     {
         var scrubbed = SearchErrors.Scrub(message);

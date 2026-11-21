@@ -29,8 +29,17 @@ namespace Bearing.Data.Search;
 /// <c>Authorization: ApiKey &lt;secret&gt;</c> with no user sent. <see cref="CredentialKind.AwsProfile"/> is
 /// never Basic or ApiKey, whatever secret was passed; plain HTTP to a host that is not this machine is refused
 /// for it before anything is sent, because a signed request over plain HTTP exposes the signature and the data.
-/// The request signer is not part of this build: past that check an AWS-profile connection fails the connect with
-/// <see cref="SearchErrors.SigningUnavailableSentence"/>.
+/// </para>
+/// <para>
+/// <b>AWS profile (OpenSearch only).</b> Every request is signed with SigV4 (<see cref="AwsSigV4SearchAuth"/>):
+/// service <c>aoss</c> for a host containing <c>.aoss.</c> or <c>.aoss-fips.</c>, else <c>es</c>
+/// (<see cref="ServiceFor"/>); region from <c>Options["Region"]</c>, else read from an Amazon endpoint name, else
+/// the connect is refused naming the AWS region field (<see cref="ResolveRegion"/>). The profile is
+/// <see cref="ConnectionInfo.User"/>, trimmed; blank is the SDK's default chain. The SDK's credentials object is
+/// resolved once, at the first request, and asked for its keys on every request so a refreshed SSO or
+/// assumed-role session is used; the keys live for that one request and are never stored, logged or shown. A
+/// credential failure is a <see cref="SearchSignInException"/> built from the profile name alone. The signature
+/// covers the request as sent — the real host (also through a tunnel) and the exact body bytes.
 /// </para>
 /// <para>
 /// <b>Redirects are never followed</b>: a 3xx is a <see cref="SearchServerException"/> saying so. <b>A 401</b> is
@@ -88,6 +97,20 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
     /// <param name="secret">The password or API key; null or blank for none. Ignored for an AWS profile.</param>
     /// <param name="tunnel">The loopback end of an SSH forward to dial instead of the host, or null.</param>
     internal SearchConnectionFactory(SearchEngine engine, ConnectionInfo info, string? secret, TunnelEndpoint? tunnel = null)
+        : this(engine, info, secret, tunnel, awsCredentials: null, clock: null)
+    {
+    }
+
+    /// <summary>The real transport with an AWS credential source and a clock someone else made — the fakes, in the
+    /// signer's round-trip tests, or a source over a temporary profiles file. Nothing in the app passes either;
+    /// null is the real one (<see cref="AwsProfileCredentialSource"/> over the SDK's own files, the system clock).</summary>
+    internal SearchConnectionFactory(
+        SearchEngine engine,
+        ConnectionInfo info,
+        string? secret,
+        TunnelEndpoint? tunnel,
+        IAwsCredentialSource? awsCredentials,
+        TimeProvider? clock)
     {
         Engine = engine;
         Info = info;
@@ -95,7 +118,7 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
         _tunnel = tunnel;
         try
         {
-            _settings = Read(engine, info, secret);
+            _settings = Read(engine, info, secret, awsCredentials, clock ?? TimeProvider.System);
         }
         catch (SearchConfigurationException e)
         {
@@ -246,7 +269,8 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
         string UriHost, int Port, TlsMode Mode, bool Loopback, SearchAuthMethod Method, ISearchRequestAuth Auth);
 
     /// <summary>Read and check the record. Pure — no network. Throws the sentence for a refused setting.</summary>
-    private static SearchSettings Read(SearchEngine engine, ConnectionInfo info, string? secret)
+    private static SearchSettings Read(
+        SearchEngine engine, ConnectionInfo info, string? secret, IAwsCredentialSource? awsCredentials, TimeProvider clock)
     {
         var host = HostOf(info.Host);
         var port = info.Port is >= 1 and <= 65535 ? info.Port : DefaultPort;
@@ -259,10 +283,95 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
             throw new SearchConfigurationException(SearchErrors.AwsPlainHttpSentence);
         }
 
-        var auth = AuthOf(method, info, secret);
+        var auth = method == SearchAuthMethod.AwsSigV4
+            ? SignerOf(engine, info, awsCredentials, clock)
+            : AuthOf(method, info, secret);
 
         return new SearchSettings(host, port, mode, loopback, method, auth);
     }
+
+    /// <summary>The SigV4 signer for an AWS-profile connection: region and service settled now (a missing region
+    /// fails the connect here), credentials asked for per request. The password box is never read.</summary>
+    private static AwsSigV4SearchAuth SignerOf(
+        SearchEngine engine, ConnectionInfo info, IAwsCredentialSource? awsCredentials, TimeProvider clock)
+    {
+        var region = ResolveRegion(info);
+        var service = ServiceFor(info.Host);
+        var profile = string.IsNullOrWhiteSpace(info.User) ? null : info.User.Trim();
+
+        return new AwsSigV4SearchAuth(
+            engine, profile, awsCredentials ?? new AwsProfileCredentialSource(engine, profile), region, service, clock);
+    }
+
+    /// <summary>
+    /// The SigV4 signing name for <paramref name="host"/>: <c>aoss</c> (OpenSearch Serverless) when the host holds
+    /// <c>.aoss.</c> or <c>.aoss-fips.</c>, otherwise <c>es</c> (Amazon OpenSearch Service, and anything else —
+    /// a custom endpoint names no service). Case-insensitive. Pure.
+    /// </summary>
+    internal static string ServiceFor(string? host)
+    {
+        var name = $".{host?.Trim().TrimEnd('.') ?? ""}.";
+
+        return name.Contains(".aoss.", StringComparison.OrdinalIgnoreCase)
+               || name.Contains(".aoss-fips.", StringComparison.OrdinalIgnoreCase)
+            ? "aoss"
+            : "es";
+    }
+
+    /// <summary>
+    /// The signing region: <c>Options["Region"]</c> when set (trimmed, lower-cased; refused unless it is letters,
+    /// digits and hyphens), else read from the host (<see cref="RegionFromHost"/>), else the connect is refused
+    /// with <see cref="SearchErrors.AwsRegionMissingSentence"/>. Pure.
+    /// </summary>
+    internal static string ResolveRegion(ConnectionInfo info)
+    {
+        var key = info.Options.Keys.FirstOrDefault(k => string.Equals(k, RegionOption, StringComparison.OrdinalIgnoreCase));
+        var option = key is null ? null : info.Options[key]?.Trim();
+        if (!string.IsNullOrEmpty(option))
+        {
+            return IsRegionName(option)
+                ? option.ToLowerInvariant()
+                : throw new SearchConfigurationException(SearchErrors.AwsRegionInvalidSentence);
+        }
+
+        return RegionFromHost(info.Host)
+            ?? throw new SearchConfigurationException(SearchErrors.AwsRegionMissingSentence);
+    }
+
+    /// <summary>
+    /// The region an Amazon endpoint name carries, or null: <c>….&lt;region&gt;.es.amazonaws.com</c> (a domain),
+    /// <c>….&lt;region&gt;.aoss.amazonaws.com</c> (Serverless), <c>….aoss.&lt;region&gt;.on.aws</c> and
+    /// <c>….aoss-fips.&lt;region&gt;.on.aws</c> (Serverless, newer names). Case-insensitive; a trailing dot is
+    /// ignored. A custom endpoint, an IP address or any other name carries none. Pure.
+    /// </summary>
+    internal static string? RegionFromHost(string? host)
+    {
+        var labels = (host?.Trim().TrimEnd('.') ?? "").ToLowerInvariant().Split('.');
+        if (labels.Length < 4)
+        {
+            return null;
+        }
+
+        string? region = null;
+        if (labels[^1] == "com" && labels[^2] == "amazonaws" && labels[^3] is "es" or "aoss")
+        {
+            region = labels[^4];
+        }
+        else if (labels[^1] == "aws" && labels[^2] == "on" && labels[^4] is "aoss" or "aoss-fips")
+        {
+            region = labels[^3];
+        }
+
+        return region is not null && IsRegionName(region) ? region : null;
+    }
+
+    /// <summary>A region name as SigV4's credential scope can carry it: letters, digits and hyphens, starting
+    /// with a letter, at least one hyphen (<c>eu-west-1</c>, <c>us-gov-west-1</c>).</summary>
+    private static bool IsRegionName(string value)
+        => value.Length is >= 4 and <= 32
+           && char.IsAsciiLetter(value[0])
+           && value.Contains('-')
+           && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '-');
 
     /// <summary>The host as a URI names it: trimmed, an IPv6 literal bracketed. A value carrying a scheme, a
     /// path, a port, user-info or whitespace is refused (<see cref="SearchErrors.HostOnlySentence"/>).</summary>
@@ -347,8 +456,8 @@ public sealed class SearchConnectionFactory : IDbConnectionFactory
                 }
                 return new ApiKeySearchAuth(key);
             case SearchAuthMethod.AwsSigV4:
-                // The signer is not part of this build; nothing is sent until it is.
-                throw new SearchConfigurationException(SearchErrors.SigningUnavailableSentence);
+                // Signed by SignerOf, never here: failing closed beats sending an AWS-profile request unsigned.
+                throw new InvalidOperationException("An AWS-profile connection is signed by the SigV4 signer.");
             default:
                 return NoSearchAuth.Instance;
         }

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Bearing.Core.Data;
+using Bearing.Data.Aws;
 using Bearing.Data.DynamoDb;
 
 namespace Bearing.Data.Search;
@@ -184,11 +185,51 @@ internal static class SearchErrors
         + "sent over plain HTTP to a host that is not this machine. Check the host and the port.";
 
     /// <summary>
-    /// What an AWS-profile connection says while Bearing has no request signer. Replaced when the signer lands;
-    /// nothing is sent until then.
+    /// An AWS-profile connection with no region: the AWS region field is blank and the host is not an AWS
+    /// endpoint name a region can be read from (a custom endpoint, an IP address). Said at connect, before any
+    /// credential is asked for or any request is sent.
     /// </summary>
-    internal const string SigningUnavailableSentence =
-        "Signing requests with an AWS profile is not available in this build of Bearing.";
+    internal const string AwsRegionMissingSentence =
+        "This connection signs its requests with an AWS profile, and the signature needs the AWS region. Enter it "
+        + "in the AWS region field (for example eu-west-1): it can only be read from the host when the host is an "
+        + "Amazon OpenSearch Service or OpenSearch Serverless endpoint name.";
+
+    /// <summary>The AWS region field holds something that is not a region name. Not quoted: a pasted value could
+    /// be anything.</summary>
+    internal const string AwsRegionInvalidSentence =
+        "The AWS region field does not hold a region name. Enter one such as eu-west-1 (letters, digits and hyphens "
+        + "only), or leave it blank to read the region from an Amazon endpoint name.";
+
+    /// <summary>
+    /// The sentence for an AWS-profile connection whose credentials could not be produced — before anything was
+    /// sent, so it says nothing about the server. Built from the profile name and the problem alone: the SDK's own
+    /// text, and every key, secret or token, have no path into it (§1.1). A blank profile is the SDK's default
+    /// chain, and the sentence says that it produced none.
+    /// </summary>
+    internal static string AwsSignInSentence(SearchEngine engine, string? profile, AwsSignInProblem problem)
+    {
+        var name = EngineName(engine);
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            return $"The AWS SDK's default credential chain produced no credentials to sign the requests to {name} "
+                + "with. Set an AWS profile on the connection, or run \"aws sso login\" and try again.";
+        }
+
+        var who = profile.Trim();
+        return problem switch
+        {
+            AwsSignInProblem.ProfileNotFound =>
+                $"AWS profile '{who}' was not found. Check its name in your AWS config, "
+                + $"or run \"aws sso login --profile {who}\" if it is an SSO profile.",
+            AwsSignInProblem.ProfileHasNoCredentials =>
+                $"AWS profile '{who}' was found, but the AWS SDK could not read a complete set of credential settings "
+                + "from it (access keys, SSO, a role or a credential process). A profile that only sets a region "
+                + $"cannot sign in; check the profile in your AWS config (for an SSO profile, \"aws sso login --profile {who}\").",
+            _ =>
+                $"Could not get AWS credentials from profile '{who}' to sign the requests to {name} with. If it is an "
+                + $"SSO profile, run \"aws sso login --profile {who}\" and try again; otherwise check the profile in your AWS config.",
+        };
+    }
 
     /// <summary>The Authentication option holds a value Bearing does not know. Quoted: it is a setting, not a secret.</summary>
     internal static string UnknownAuthenticationSentence(string value)
@@ -361,13 +402,21 @@ internal static class SearchErrors
         @"(?<key>api[_\- ]?key|password|passwd)\s*[=:]\s*(?<value>[^\s,;""']+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    // A SigV4 "Credential=AKID/20250101/region/service/aws4_request" or "Signature=<hex>", and the presigned
+    // query forms "X-Amz-Credential=" / "X-Amz-Signature=": the access-key id and the signature, whatever their
+    // shape (an id that is not AKIA-shaped escapes the AWS key-id pattern).
+    private static readonly Regex SigV4Fragment = new(
+        @"\b(?<key>(?:X-Amz-)?(?:Credential|Signature))\s*=\s*[^\s,;""'&]+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     // "scheme://user:password@host" — the user-info part of a URL.
     private static readonly Regex UrlUserInfo = new(
         @"(?<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/\s@]*@", RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Redact anything in <paramref name="message"/> that can be a credential: an <c>Authorization</c> value,
-    /// a Basic / ApiKey / Bearer token, a labelled API key or password, the user-info of a URL, then the AWS
+    /// a Basic / ApiKey / Bearer token, a labelled API key or password, a SigV4 <c>Credential=</c> or
+    /// <c>Signature=</c> fragment, the user-info of a URL, then the AWS
     /// forms (<see cref="DynamoDbErrors.Scrub"/>: access-key ids, <c>secret=…</c>, session tokens). Over-redacting
     /// is the safe direction to be wrong in.
     /// </summary>
@@ -376,6 +425,7 @@ internal static class SearchErrors
         var text = AuthorizationHeader.Replace(message, m => $"{m.Groups["key"].Value}: ***");
         text = SchemeToken.Replace(text, m => $"{m.Groups["scheme"].Value} ***");
         text = LabelledKey.Replace(text, m => $"{m.Groups["key"].Value}=***");
+        text = SigV4Fragment.Replace(text, m => $"{m.Groups["key"].Value}=***");
         text = UrlUserInfo.Replace(text, m => $"{m.Groups["scheme"].Value}***@");
 
         return DynamoDbErrors.Scrub(text);
@@ -480,8 +530,11 @@ internal sealed class SearchConfigurationException : Exception
 }
 
 /// <summary>
-/// The server answered HTTP 401. The message is the finished sentence
-/// (<see cref="SearchErrors.SignInSentence"/>), built from the method and the user name only.
+/// The connection could not sign in. Two origins, one classification (<see cref="DbErrorKind.Authentication"/>):
+/// the server answered HTTP 401 (<see cref="SearchErrors.SignInSentence"/>, built from the method and the user
+/// name only), or — for an AWS profile — the credentials to sign with could not be produced, before anything was
+/// sent (<see cref="SearchErrors.AwsSignInSentence"/>, built from the profile name and the problem only). Never
+/// carries the SDK's exception: its text is not ours to show, and an inner exception is what a log prints.
 /// </summary>
 internal sealed class SearchSignInException : Exception
 {
@@ -491,8 +544,19 @@ internal sealed class SearchSignInException : Exception
         Method = method;
     }
 
-    /// <summary>The method the server refused.</summary>
+    /// <summary>An AWS profile's credentials could not be produced (<paramref name="problem"/>); nothing was sent.</summary>
+    public SearchSignInException(SearchEngine engine, string? profile, AwsSignInProblem problem)
+        : base(SearchErrors.AwsSignInSentence(engine, profile, problem))
+    {
+        Method = SearchAuthMethod.AwsSigV4;
+        Problem = problem;
+    }
+
+    /// <summary>The method that was refused, or could not be used.</summary>
     public SearchAuthMethod Method { get; }
+
+    /// <summary>Why an AWS profile's credentials could not be produced; null for an HTTP 401.</summary>
+    public AwsSignInProblem? Problem { get; }
 }
 
 /// <summary>

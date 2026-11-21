@@ -4,8 +4,8 @@ using Amazon;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime;
-using Amazon.Runtime.CredentialManagement;
 using Bearing.Core.Data;
+using Bearing.Data.Aws;
 
 namespace Bearing.Data.DynamoDb;
 
@@ -297,19 +297,16 @@ public sealed class DynamoDbConnectionFactory : IDbConnectionFactory
         AmazonDynamoDBClient client;
         if (profile is not null)
         {
-            // The SDK reads the named profile here, in this process (see the class remarks). Two questions, so
-            // each failure says only what was found: is the profile there, and does it hold credentials the SDK
-            // can build. (CredentialProfileStoreChain.TryGetAWSCredentials answers both with one false.)
-            var chain = profilesLocation is null
-                ? new CredentialProfileStoreChain()
-                : new CredentialProfileStoreChain(profilesLocation);
-            if (!chain.TryGetProfile(profile, out var found))
+            // The SDK reads the named profile here, in this process (see the class remarks). The shared lookup
+            // asks two questions, so each failure says only what was found: is the profile there, and does it
+            // hold credentials the SDK can build. It returns the SDK's object and never asks it for keys.
+            if (!AwsProfileCredentials.TryNamed(profile, profilesLocation, out var credentials, out var problem))
             {
-                throw new DynamoDbSignInException(profile, DynamoDbSignInProblem.ProfileNotFound);
-            }
-            if (!AWSCredentialsFactory.TryGetAWSCredentials(found, found.CredentialProfileStore, out var credentials))
-            {
-                throw new DynamoDbSignInException(profile, DynamoDbSignInProblem.ProfileHasNoCredentials);
+                throw new DynamoDbSignInException(
+                    profile,
+                    problem == AwsSignInProblem.ProfileNotFound
+                        ? DynamoDbSignInProblem.ProfileNotFound
+                        : DynamoDbSignInProblem.ProfileHasNoCredentials);
             }
             client = new AmazonDynamoDBClient(credentials, config);
         }
