@@ -134,6 +134,47 @@ public class OpenSearchDialectTests
         Assert.Equal(verb, only.Verb);
     }
 
+    /// <summary>A PPL machine-learning command (<c>ml action='train'</c> stores a model on the cluster) makes a
+    /// known read risky — by the conservative default, because Bearing cannot tell which call writes (§1.2).</summary>
+    [Theory]
+    [InlineData("source=logs | ml action='train' algorithm='rcf'", "ML")]
+    [InlineData("source=logs | kmeans centroids=3", "KMEANS")]
+    [InlineData("source=logs | AD time_field='t'", "AD")]
+    [InlineData("search source=logs | where a > 1 | ml action='predict'", "ML")]
+    [InlineData("source=logs | fork (where a = 1 | head 1) (kmeans centroids=2)", "KMEANS")]
+    [InlineData("source=logs | ml action='train' | kmeans centroids=2 | ml action='x'", "ML + KMEANS")]
+    public void A_machine_learning_command_is_risky_by_the_conservative_default(string sql, string label)
+    {
+        var only = Assert.Single(WriteGuard.Describe(Os, sql));
+        Assert.True(only.IsRisky);
+        Assert.True(only.FromConservativeDefault);
+        Assert.False(only.NamesAWrite);
+        Assert.Equal(label, only.Label);
+    }
+
+    [Theory]
+    [InlineData("source=logs | fields ml, ad")]
+    [InlineData("source=ml | head 5")]
+    [InlineData("source=logs | where ad = 1 | stats count() by kmeans")]
+    [InlineData("source=logs | where msg = '| ml action=train'")]
+    [InlineData("SELECT ml, kmeans, ad FROM logs")]
+    [InlineData("SELECT * FROM ml")]
+    public void A_field_or_index_named_like_a_machine_learning_command_is_still_a_read(string sql)
+    {
+        var only = Assert.Single(WriteGuard.Describe(Os, sql));
+        Assert.False(only.IsRisky);
+    }
+
+    [Fact]
+    public void A_machine_learning_command_is_still_refused_on_an_exposed_connection_in_the_dialects_words()
+    {
+        var refusal = External("source=logs | ml action='train' algorithm='rcf'");
+        Assert.NotNull(refusal);
+        Assert.Contains("'ml'", refusal);
+        Assert.Contains("machine-learning", refusal);
+        Assert.DoesNotContain("writes", refusal);
+    }
+
     [Fact]
     public void A_mixed_batch_is_classified_statement_by_statement()
     {

@@ -83,9 +83,6 @@ internal sealed record SearchLayout(IReadOnlyList<SearchLayoutColumn> Columns)
 /// </summary>
 internal static partial class SearchValues
 {
-    /// <summary>The longest excerpt of a value quoted in a misfit message.</summary>
-    internal const int ExcerptLength = 80;
-
     /// <summary>The mapping names, and the names PPL reports for the same mappings — measured on OpenSearch 3.10
     /// (<c>SearchLiveTests</c>): <c>byte</c>, <c>short</c>, <c>integer</c> and <c>long</c> fields are
     /// <c>tinyint</c>, <c>smallint</c>, <c>int</c> and <c>bigint</c> in a PPL schema, while OpenSearch SQL and
@@ -332,7 +329,7 @@ internal static partial class SearchValues
             {
                 if (!TryCell(columns[c].Kind, row[c], out cells[c]))
                 {
-                    throw new SearchValueMisfitException(columns[c], Excerpt(row[c]));
+                    throw new SearchValueMisfitException(columns[c], ValueShape(row[c]));
                 }
             }
             converted.Add(cells);
@@ -390,27 +387,38 @@ internal static partial class SearchValues
                && TimeOnly.TryParseExact(text, TimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out time);
     }
 
-    private static string Excerpt(JsonElement value)
+    /// <summary>
+    /// The kind of JSON value that arrived, in words — never the value. A misfit message reaches the query log
+    /// through the <c>bearing</c> command's exports, where literal redaction does not apply, so row data must not
+    /// travel in it (§1.3).
+    /// </summary>
+    internal static string ValueShape(JsonElement value) => value.ValueKind switch
     {
-        var text = value.GetRawText();
-
-        return text.Length <= ExcerptLength ? text : text[..ExcerptLength] + "…";
-    }
+        JsonValueKind.Array => "a JSON array",
+        JsonValueKind.Object => "a JSON object",
+        JsonValueKind.String => "text",
+        JsonValueKind.Number => "a number",
+        JsonValueKind.True or JsonValueKind.False => "a true/false value",
+        JsonValueKind.Null => "null",
+        _ => "a value of another kind",
+    };
 }
 
 /// <summary>
 /// A value on a later page that does not fit the column the first page fixed — the page fails rather than show
-/// it altered (spec, Behaviour 5). The message names the column, its declared type and a bounded excerpt of the
-/// value as the server sent it; the value is not changed.
+/// it altered (spec, Behaviour 5). The message names the column, its declared type and the kind of value that
+/// arrived (<see cref="SearchValues.ValueShape"/>: "a JSON array", "text", …) — never the value itself: the
+/// message becomes the page's <see cref="QueryError"/>, which the <c>bearing</c> command's exports write to the
+/// query log, where literal redaction does not apply (§1.3). The value is not changed, and not kept.
 /// </summary>
 internal sealed class SearchValueMisfitException : Exception
 {
-    public SearchValueMisfitException(SearchLayoutColumn column, string excerpt)
-        : base($"Column \"{column.Name}\" ({column.TypeName}): this page holds a value that does not fit the column the first page set up, so the page was not read: {excerpt}")
+    public SearchValueMisfitException(SearchLayoutColumn column, string valueShape)
+        : base($"Column \"{column.Name}\" ({column.TypeName}): this page holds {valueShape} that does not fit the column the first page set up, so the page was not read.")
     {
         Column = column.Name;
         TypeName = column.TypeName;
-        Excerpt = excerpt;
+        ValueShape = valueShape;
     }
 
     /// <summary>The column's name.</summary>
@@ -419,6 +427,7 @@ internal sealed class SearchValueMisfitException : Exception
     /// <summary>The server's declared type name.</summary>
     public string TypeName { get; }
 
-    /// <summary>At most <see cref="SearchValues.ExcerptLength"/> characters of the value's JSON text.</summary>
-    public string Excerpt { get; }
+    /// <summary>The kind of value that arrived, in words (<see cref="SearchValues.ValueShape"/>) — not the
+    /// value.</summary>
+    public string ValueShape { get; }
 }

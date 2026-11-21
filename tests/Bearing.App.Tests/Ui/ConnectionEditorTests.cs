@@ -1075,7 +1075,8 @@ public class ConnectionEditorTests
         Assert.Equal(CredentialKind.AwsProfile, dialog.BuildConnection().CredentialKind);
         Assert.True(Visible(dialog, "AwsProfileHint"));
         Assert.Equal(ProviderTraits.OpenSearch.AwsProfileNote, AwsHintText(dialog));
-        Assert.Contains("signs with the resolved credentials in memory", AwsHintText(dialog));
+        Assert.Contains("keeps what it resolved in memory; Bearing signs with it", AwsHintText(dialog));
+        Assert.DoesNotContain("never stores", AwsHintText(dialog));
         Assert.DoesNotContain("never reads", AwsHintText(dialog));
         // The password row goes, as for DynamoDB: nothing is stored under this kind.
         Assert.False(Visible(dialog, "PasswordBox"));

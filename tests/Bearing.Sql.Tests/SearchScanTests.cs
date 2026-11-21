@@ -361,6 +361,26 @@ public class SearchScanTests
     public void Literals_are_redacted_by_each_statements_language(SearchEngine engine, string sql, string expected)
         => Assert.Equal(expected, SearchScan.RedactLiterals(engine, sql));
 
+    // ---- Write guard: machine-learning commands ----
+
+    /// <summary>Only a command position counts: after a top-level or nested <c>|</c>, or at the head of a
+    /// <c>fork</c> branch — never inside a string, a comment or a backticked name.</summary>
+    [Theory]
+    [InlineData("source=logs | ml action='train'", true)]
+    [InlineData("source=logs | where a = 1 | KMeans centroids=2", true)]
+    [InlineData("source=logs | fork (head 1) (ad time_field='t')", true)]
+    [InlineData("source=logs // | ml action='train'", false)]
+    [InlineData("source=logs | where msg = '| ml'", false)]
+    [InlineData("source=logs | fields `ml`, ad", false)]
+    [InlineData("source=logs | rename ml as kmeans", false)]
+    public void An_opensearch_ml_command_is_flagged_only_in_command_position(string sql, bool risky)
+    {
+        var only = Assert.Single(WriteGuard.Describe(OpenSearchDialect.Instance, sql));
+        Assert.Equal(risky, only.IsRisky);
+        Assert.Equal(risky, only.FromConservativeDefault);
+        Assert.False(only.NamesAWrite);
+    }
+
     [Fact]
     public void Redacting_nothing_returns_the_input()
     {

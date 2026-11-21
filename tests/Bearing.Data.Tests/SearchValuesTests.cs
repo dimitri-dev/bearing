@@ -236,15 +236,15 @@ public class SearchValuesTests
     }
 
     [Theory]
-    [InlineData("long", nameof(SearchCellKind.Integer), "[1,2]")]
-    [InlineData("long", nameof(SearchCellKind.Integer), "\"7\"")]
-    [InlineData("unsigned_long", nameof(SearchCellKind.UnsignedLong), "1.25")]
-    [InlineData("double", nameof(SearchCellKind.Float), "true")]
-    [InlineData("keyword", nameof(SearchCellKind.Text), "{\"k\":1}")]
-    [InlineData("date", nameof(SearchCellKind.Date), "\"2024-01-15T10:00:00Z\"")]
-    [InlineData("datetime", nameof(SearchCellKind.DateTime), "\"2024-01-15\"")]
-    [InlineData("boolean", nameof(SearchCellKind.Boolean), "\"yes\"")]
-    public void A_later_page_misfit_names_the_column_and_changes_nothing(string type, string kindName, string json)
+    [InlineData("long", nameof(SearchCellKind.Integer), "[1,2]", "a JSON array")]
+    [InlineData("long", nameof(SearchCellKind.Integer), "\"7\"", "text")]
+    [InlineData("unsigned_long", nameof(SearchCellKind.UnsignedLong), "1.25", "a number")]
+    [InlineData("double", nameof(SearchCellKind.Float), "true", "a true/false value")]
+    [InlineData("keyword", nameof(SearchCellKind.Text), "{\"k\":1}", "a JSON object")]
+    [InlineData("date", nameof(SearchCellKind.Date), "\"2024-01-15T10:00:00Z\"", "text")]
+    [InlineData("datetime", nameof(SearchCellKind.DateTime), "\"2024-01-15\"", "text")]
+    [InlineData("boolean", nameof(SearchCellKind.Boolean), "\"yes\"", "text")]
+    public void A_later_page_misfit_names_the_column_and_changes_nothing(string type, string kindName, string json, string shape)
     {
         var layout = new SearchLayout(
             [new SearchLayoutColumn("fine", "long", SearchCellKind.Integer), new SearchLayoutColumn("user.age", type, Enum.Parse<SearchCellKind>(kindName))]);
@@ -254,22 +254,25 @@ public class SearchValuesTests
 
         Assert.Equal("user.age", error.Column);
         Assert.Equal(type, error.TypeName);
-        Assert.Equal(json, error.Excerpt);
-        Assert.Contains("\"user.age\"", error.Message);
-        Assert.Contains($"({type})", error.Message);
-        Assert.Contains(json, error.Message);
+        Assert.Equal(shape, error.ValueShape);
+        Assert.Equal(
+            $"Column \"user.age\" ({type}): this page holds {shape} that does not fit the column the first page set up, so the page was not read.",
+            error.Message);
     }
 
     [Fact]
-    public void A_misfit_excerpt_is_bounded()
+    public void A_misfit_message_never_carries_the_value()
     {
+        // Row data must not reach an error message: the command's exports log the page's error (§1.3).
         var layout = new SearchLayout([new SearchLayoutColumn("n", "long", SearchCellKind.Integer)]);
-        var huge = "\"" + new string('x', 1_000) + "\"";
+        const string secret = "\"jane.doe@example.com 4111-1111\"";
 
-        var error = Assert.Throws<SearchValueMisfitException>(() => SearchValues.LaterPage(layout, [[Json(huge)]]));
+        var error = Assert.Throws<SearchValueMisfitException>(() => SearchValues.LaterPage(layout, [[Json(secret)]]));
 
-        Assert.Equal(SearchValues.ExcerptLength + 1, error.Excerpt.Length);
-        Assert.StartsWith("\"xxx", error.Excerpt);
+        Assert.DoesNotContain("jane.doe", error.Message);
+        Assert.DoesNotContain("4111", error.Message);
+        Assert.DoesNotContain("jane.doe", error.ToString());
+        Assert.Contains("\"n\" (long)", error.Message);
     }
 
     [Fact]

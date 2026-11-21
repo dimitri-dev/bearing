@@ -300,6 +300,34 @@ public class ProviderTraitsEditorFactsTests
         Assert.DoesNotContain("read-only", ProviderTraits.OpenSearch.WriteBoundary!, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>A PPL machine-learning command through OpenSearch's dialect, as the App asks it: a read-only
+    /// connection refuses it in the sentence it gives any statement it could not vouch for (an unknown first word
+    /// gets the same one), "Confirm writes" asks, and nothing calls it a write. A field merely named <c>ml</c>
+    /// runs.</summary>
+    [Fact]
+    public void An_opensearch_ml_command_is_refused_on_read_only_and_confirmed_but_never_named_a_write()
+    {
+        var connection = new ConnectionInfo
+        {
+            Id = Guid.NewGuid(), Name = "search-prod", ProviderId = SearchProvider.OpenSearchId, ReadOnly = true,
+        };
+        var dialect = ProviderTraits.OpenSearch.Dialect;
+
+        var ml = WriteGuard.Describe(dialect, "source=logs | ml action='train' algorithm='rcf'");
+        var unknown = WriteGuard.Describe(dialect, "foo bar");
+
+        Assert.Equal(
+            "search-prod is read-only — ML not run. Turn read-only off for this connection to write to it.",
+            WriteRefusal.Reason(connection, ml));
+        Assert.Equal(
+            WriteRefusal.Reason(connection, unknown)!.Replace("FOO", "ML", StringComparison.Ordinal),
+            WriteRefusal.Reason(connection, ml));
+        Assert.True(Assert.Single(ml).IsRisky);
+        Assert.False(Assert.Single(ml).NamesAWrite);
+        Assert.False(WriteRefusal.OpensTransaction(Assert.Single(ml)));
+        Assert.Null(WriteRefusal.Reason(connection, WriteGuard.Describe(dialect, "source=logs | fields ml, ad")));
+    }
+
     /// <summary>The AWS-profile sentence is per engine: DynamoDB's is the dialog's sentence as it stood, word for
     /// word; OpenSearch's says Bearing signs with the credentials the SDK resolved (DynamoDB's "never reads" would be
     /// false there); every engine without an AWS profile has none.</summary>
@@ -312,8 +340,8 @@ public class ProviderTraitsEditorFactsTests
             ProviderTraits.DynamoDb.AwsProfileNote);
         Assert.Equal(
             "Signs each request with the AWS profile named in User (the AWS SDK's default credential chain when blank). "
-            + "The AWS SDK resolves the profile; Bearing signs with the resolved credentials in memory and never stores, "
-            + "logs or shows them.",
+            + "The AWS SDK resolves the profile and keeps what it resolved in memory; Bearing signs with it and never "
+            + "writes it to disk, logs it or shows it.",
             ProviderTraits.OpenSearch.AwsProfileNote);
         Assert.Null(ProviderTraits.Elasticsearch.AwsProfileNote);
         Assert.Null(ProviderTraits.Postgres.AwsProfileNote);

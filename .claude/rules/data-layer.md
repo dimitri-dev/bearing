@@ -109,7 +109,7 @@ Measured against Elasticsearch 9.5.6 and OpenSearch 3.10.0 containers (`SearchLi
   `text`, `ip`, `version`, `date_nanos`, …) → text, `binary` → bytes, `date`/`datetime`/`timestamp` → `DateTime`
   Utc (`DateOnly` when the first page holds dates only), `time` → `TimeOnly`; objects, arrays, geo, unknown → JSON
   text. **The first page fixes each column** (a misfit there makes it text); a later misfit **fails that page
-  naming the column** — nothing altered or dropped. `field_multi_value_leniency` is never sent (it would pick one
+  naming the column**, its type and the kind of value, never the value (§1.9d) — nothing altered or dropped. `field_multi_value_leniency` is never sent (it would pick one
   value of an array silently); Elasticsearch SQL's own array refusal is shown as it is.
 - **Metadata:** one database named after the host, one schema `""`. `GET` `_cat/indices` (open only), `_alias`,
   `_data_stream` (400/404/405 = none), then `/*/_mapping` (64 MB ceiling; a stream takes its newest backing

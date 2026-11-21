@@ -295,8 +295,11 @@ public static class SearchScan
     /// <summary>
     /// The write guard for both engines (spec, Behaviour 7). A statement is a read when its lead word(s) are a
     /// known read of its language — a row of the language table, <c>DELETE</c> excepted; an OpenSearch
-    /// <c>DELETE</c> names a write; an ES|QL statement with an <c>INTO</c> command names a write; every other
-    /// statement is risky by the conservative default (an unknown first word), widening only (§1.2).
+    /// <c>DELETE</c> names a write; an ES|QL statement with an <c>INTO</c> command names a write; an OpenSearch PPL
+    /// statement with an <c>ml</c>, <c>kmeans</c> or <c>ad</c> command is risky by the conservative default (a
+    /// machine-learning job, which may store a model — Bearing cannot tell which call does, so it is never named
+    /// a write); every other statement is risky by the conservative default (an unknown first word), widening
+    /// only (§1.2).
     /// <para>
     /// A statement with no code but <c>;</c> — the second statement of <c>select 1;;</c>, or a lone <c>;</c> —
     /// is not a statement and is not described, as the PostgreSQL guard skips a span with no keyword: it sends
@@ -338,12 +341,32 @@ public static class SearchScan
             {
                 risk = risk with { RiskyVerbs = [statement.Verb], FromConservativeDefault = true };
             }
+            else if (found.Count == 0 && MachineLearningCommands(engine, statement) is { Count: > 0 } jobs)
+            {
+                // A known read on its lead word, but a pipe runs a machine-learning job — `ml action='train'`
+                // stores a model on the cluster. Bearing cannot tell which calls write, so this is risky by the
+                // conservative default (confirmed, refused on read-only), never named as a write.
+                risk = risk with { RiskyVerbs = jobs, FromConservativeDefault = true };
+            }
 
             described.Add(risk);
         }
 
         return described;
     }
+
+    /// <summary>The PPL commands that run machine-learning jobs, the ones
+    /// <c>OpenSearchDialect.ExternalDeniedStatement</c> refuses on an exposed connection.</summary>
+    private static readonly HashSet<string> MachineLearning = new(StringComparer.Ordinal) { "ML", "KMEANS", "AD" };
+
+    /// <summary>The machine-learning commands (<c>ML</c>, <c>KMEANS</c>, <c>AD</c>) in an OpenSearch piped
+    /// statement's command positions (<see cref="CommandWords"/>, fork branches included), distinct, in
+    /// first-seen order; empty for anything else. A column or index merely named <c>ml</c> is not in a command
+    /// position and is not counted.</summary>
+    private static List<string> MachineLearningCommands(SearchEngine engine, SearchStatement statement)
+        => engine == SearchEngine.OpenSearch && statement.Language == SearchLanguage.Piped
+            ? CommandWords(statement).Where(MachineLearning.Contains).Distinct(StringComparer.Ordinal).ToList()
+            : [];
 
     /// <summary>
     /// The upper-cased word in each command position of a piped statement: after every <c>|</c> outside

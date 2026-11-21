@@ -420,7 +420,7 @@ public class SearchQueryExecutorTests
     {
         var api = new FakeSearchApi(r => r.Query is not null
             ? SqlFirst(SearchEngine.Elasticsearch, 1, cursor: "c1")
-            : SqlLater(SearchEngine.Elasticsearch, [["\"not a number\"", "\"b\""]], null));
+            : SqlLater(SearchEngine.Elasticsearch, [["\"private cell text\"", "\"b\""]], null));
         var executor = Executor(api, SearchEngine.Elasticsearch);
         var first = Assert.Single(await executor.ExecuteAsync("SELECT n, name FROM logs", new QueryOptions(), CancellationToken.None));
 
@@ -428,7 +428,8 @@ public class SearchQueryExecutorTests
 
         Assert.False(result.Success);
         Assert.Contains("Column \"n\" (long)", result.Error!.Message);
-        Assert.Contains("not a number", result.Error.Message);
+        Assert.Contains("holds text that does not fit", result.Error.Message);
+        Assert.DoesNotContain("private cell text", result.Error.Message);
         Assert.Empty(result.Rows);
     }
 

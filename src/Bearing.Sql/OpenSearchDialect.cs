@@ -173,9 +173,9 @@ public sealed partial class OpenSearchDialect : ISqlDialect
 
     /// <summary>
     /// Per statement, in its own language: a read when its lead word(s) are a known read of that language
-    /// (<see cref="SearchScan"/>'s table, <c>DELETE</c> excepted); <c>DELETE</c> names a write; any other
-    /// statement — an unknown first word — is risky by the conservative default
-    /// (<see cref="StatementRisk.FromConservativeDefault"/>).
+    /// (<see cref="SearchScan"/>'s table, <c>DELETE</c> excepted) and no pipe command is <c>ml</c>, <c>kmeans</c>
+    /// or <c>ad</c>; <c>DELETE</c> names a write; a machine-learning command, and any other statement — an unknown
+    /// first word — is risky by the conservative default (<see cref="StatementRisk.FromConservativeDefault"/>).
     /// </summary>
     public IReadOnlyList<StatementRisk> DescribeStatements(string sql) => SearchScan.Describe(SearchEngine.OpenSearch, sql);
 

@@ -210,15 +210,20 @@ holds before selecting `*` or an options bag.
 - **Read-only is client-side only** (`EnforcesReadOnlyOnServer` false, §1.9a): `WriteRefusal` is Bearing's whole
   guarantee; the boundary is a role or API key (Elasticsearch), a role or IAM policy (OpenSearch) without write
   privileges (`ProviderTraits.WriteBoundary`). The write guard (`SearchScan.Describe`, each statement in its own
-  language) flags OpenSearch `DELETE`, an ES|QL `INTO` and **any first word that is not a known read** — widening
-  only (§1.2). A statement with no code (a bare `;`) is not described.
+  language) flags OpenSearch `DELETE`, an ES|QL `INTO`, a PPL `ml`, `kmeans` or `ad` in a command position (fork
+  branches included; `ml action='train'` stores a model — risky by the conservative default, never named a write,
+  since Bearing cannot tell which call writes) and **any first word that is not a known read** — widening only
+  (§1.2). A field or index merely named `ml` is not flagged. A statement with no code (a bare `;`) is not described.
 - **The `bearing` command:** allow-lists Elasticsearch `SELECT SHOW DESCRIBE DESC FROM ROW TS`, OpenSearch `SELECT
   SHOW DESCRIBE SEARCH SOURCE INDEX`. Refused by name on top (`ExternalDeniedStatement`): ES|QL `COMPLETION`,
   `RERANK` (inference) and `INTO`; PPL `ml`, `kmeans`, `ad` and `rest` (also as a first word); any index name
   starting with `.` (bare, quoted or backticked; a string only where it names the source). Accident prevention, not
   a boundary (§1.11b). A dialect's own refusal sentence (one ending in `.`) is returned as written by
   `ExternalSqlPolicy`, never wrapped in the credentials sentence. `explain` is refused.
-- The continuation (cursor + column layout) is memory-only — never logged, persisted or shown (§1.3). Query-log
+- The continuation (cursor + column layout) is memory-only — never logged, persisted or shown (§1.3). A later-page
+  value that does not fit its column fails the page naming the column, its type and the **kind** of value ("a JSON
+  array", "text", …) — never the value: that error reaches the query log through the command's exports, where
+  literal redaction does not apply (`SearchValueMisfitException`). Server-authored error text (scrubbed) stays. Query-log
   redaction reads each statement in its own language (`SearchScan.RedactLiterals`: an ES|QL `"x"` is a string, an
   Elasticsearch SQL `"x"` a name).
 - **Not verified against a real AWS domain, OpenSearch Serverless or Elastic Cloud** — SigV4 is tested against AWS's

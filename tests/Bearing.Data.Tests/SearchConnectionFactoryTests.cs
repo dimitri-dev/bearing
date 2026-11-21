@@ -316,6 +316,26 @@ public class SearchConnectionFactoryTests
     }
 
     [Fact]
+    public async Task Prefer_with_an_aws_profile_off_loopback_refuses_the_plain_http_fallback_and_sends_nothing()
+    {
+        // The handshake fails against a plain server; Prefer would fall back to http://, which would send the
+        // signature and every row read in the clear. Off loopback that is refused (AwsNoTlsSentence).
+        const string host = "search-x.eu-west-1.es.amazonaws.com";
+        await using var server = LoopbackServer.Plain(_ => new Canned(200, Ok));
+        var source = new FakeCredentials(new Amazon.Runtime.ImmutableCredentials(FakeAccessKey, FakeSecretKey, null));
+        await using var factory = Signed(
+            Info(443, TlsMode.Prefer, host: host, kind: CredentialKind.AwsProfile),
+            source,
+            new TunnelEndpoint("127.0.0.1", server.Port));
+
+        var refused = await Assert.ThrowsAsync<SearchConfigurationException>(() => factory.TestConnectionAsync(CancellationToken.None));
+
+        Assert.Equal(SearchErrors.AwsNoTlsSentence, refused.Message);
+        Assert.Equal(1, server.TlsHellos);
+        Assert.Empty(server.Requests);
+    }
+
+    [Fact]
     public async Task Credentials_are_asked_for_on_every_request()
     {
         await using var server = LoopbackServer.Plain(_ => new Canned(200, Ok));

@@ -248,9 +248,11 @@ public sealed record ProviderTraits(
         ReadsContinueByToken = true,
         SamplesAttributes = false,
         NetworkOptions = [],
+        // The SDK's credentials object lives as long as the connection's factory (a static-key profile's keys
+        // with it), so the note says the SDK keeps what it resolved — not that nothing is stored (§1.1, §1.9d).
         AwsProfileNote = "Signs each request with the AWS profile named in User (the AWS SDK's default credential "
-                         + "chain when blank). The AWS SDK resolves the profile; Bearing signs with the resolved "
-                         + "credentials in memory and never stores, logs or shows them.",
+                         + "chain when blank). The AWS SDK resolves the profile and keeps what it resolved in "
+                         + "memory; Bearing signs with it and never writes it to disk, logs it or shows it.",
     };
 
     /// <summary>
