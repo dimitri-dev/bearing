@@ -102,8 +102,14 @@ public static class ExternalSqlPolicy
 
             if (dialect.ExternalDeniedStatement(statement.Text) is { } shape)
             {
-                return $"'{shape}' is not available through an exposed connection. It can return credentials — "
-                     + "a password hash, or a connection string for another server (§1.8).";
+                // A dialect that refuses a shape for a reason other than credentials answers with its own whole
+                // sentence (it ends with '.'), because the one below would assert a cause that is not true of it
+                // (§1.1) — the search engines' inference and machine-learning commands, and dot-prefixed indices. A shape name is never a
+                // sentence, so the engines that answer with one are unaffected.
+                return shape.EndsWith('.')
+                    ? shape
+                    : $"'{shape}' is not available through an exposed connection. It can return credentials — "
+                      + "a password hash, or a connection string for another server (§1.8).";
             }
         }
 

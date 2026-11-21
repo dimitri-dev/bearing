@@ -205,6 +205,11 @@ public interface ISqlDialect
     /// even though its lead verb is on <see cref="ExternalReadVerbs"/>: the name of the shape, or null. Where
     /// <see cref="ExternalDeniedRelations"/> fences a catalog, this fences a command that reads one for you
     /// (MySQL's <c>SHOW CREATE USER</c> prints the password hash). Same accident-prevention posture.
+    /// <para>
+    /// A dialect refusing a shape for another reason answers with a whole sentence ending in <c>.</c> instead,
+    /// which <see cref="ExternalSqlPolicy.Refuse"/> passes on as it is — the credential sentence it wraps a
+    /// shape name in would not be true of it (§1.1).
+    /// </para>
     /// </summary>
     string? ExternalDeniedStatement(string statement) => null;
 
